@@ -326,8 +326,10 @@ public class WordCount {
 // <ExcludeEnd>
 
     public static void main(String[] args) throws Exception {
-        Path input = new Path(args[0]);
-        Path output1 = new Path(args[1], "pass1");
+        String inputt = "words";
+        String outputt = "output";
+        Path input = new Path(inputt);
+        Path output1 = new Path(outputt, "pass1");
 
         // subsection 1.1 - first map reduce job
         Job wordcountJob = runWordCount(input, output1);
