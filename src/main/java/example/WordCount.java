@@ -106,14 +106,14 @@ public class WordCount {
         @Override
         public void reduce(Text key, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
-            PriorityQueue<Pair<String, Integer>> pq = new PriorityQueue<>(
-                    (p, q) -> p.second.compareTo(q.second));
+        PriorityQueue<Pair<String, Integer>> pq = new PriorityQueue<>(
+                        (p, q) -> p.second.compareTo(q.second));
 
-            for (Text value : values) {
-                String[] parts = value.toString().split(SingleKeyMapper.SEPARATOR);
-                pq.add(new Pair<>(parts[0], Integer.parseInt(parts[1])));
+                for (Text value : values) {
+                    String[] parts = value.toString().split(SingleKeyMapper.SEPARATOR);
+                    pq.add(new Pair<>(parts[0], Integer.parseInt(parts[1])));
 
-                if (pq.size() > K) { pq.poll(); }
+                    if (pq.size() > K) { pq.poll(); }
             }
 
             ArrayList<Pair<String, Integer>> bestPairs = new ArrayList<>(pq);
