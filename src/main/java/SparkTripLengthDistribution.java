@@ -1,6 +1,5 @@
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -13,11 +12,18 @@ import utils.DistanceUtil;
 import java.io.IOException;
 import java.util.StringTokenizer;
 
+import org.apache.log4j.pattern.LogEvent;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class SparkTripLengthDistribution {
+    private static Logger logger=LoggerFactory.getLogger(SparkTripLengthDistribution.class);
 
     public static class DistanceMapper
-            extends Mapper<Object, Text, DoubleWritable, IntWritable> {
+            extends Mapper<Object, Text, IntWritable, IntWritable> {
         private final static IntWritable one = new IntWritable(1);
+        private IntWritable distanceIntWritable = new IntWritable();
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
@@ -29,37 +35,22 @@ public class SparkTripLengthDistribution {
             Double endTime = Double.valueOf(itr.nextToken());
             Double endLat = Double.valueOf(itr.nextToken());
             Double endLong = Double.valueOf(itr.nextToken());
-            Double distance = DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+            int distance = (int)Math.round(DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
             Double tripTime = endTime - beginTime;
             Double speed = 3.6 * distance / tripTime;
+            distanceIntWritable.set(distance);
             if (speed > 0 && speed < 300) {
-                context.write(new DoubleWritable(distance), one);
+                context.write(distanceIntWritable, one);
             }
         }
     }
 
-
-    public static class MinMaxMapper
-            extends Reducer<DoubleWritable, IntWritable, Text, IntWritable> {
-        private IntWritable result = new IntWritable();
-
-        public void reduce(Text key, Iterable<IntWritable> values,
-                           Context context
-        ) throws IOException, InterruptedException {
-            int sum = 0;
-            for (IntWritable val : values) {
-                sum += val.get();
-            }
-            result.set(sum);
-            context.write(key, result);
-        }
-    }
 
   public static class IntSumReducer
-            extends Reducer<DoubleWritable, IntWritable, Text, IntWritable> {
+            extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable> {
         private IntWritable result = new IntWritable();
 
-        public void reduce(Text key, Iterable<IntWritable> values,
+        public void reduce(IntWritable key, Iterable<IntWritable> values,
                            Context context
         ) throws IOException, InterruptedException {
             int sum = 0;
@@ -72,7 +63,9 @@ public class SparkTripLengthDistribution {
     }
 
     public static void main(String[] args) throws Exception {
+        long start = System.currentTimeMillis();
         Configuration conf = new Configuration();
+
         Job job = Job.getInstance(conf, "trip length");
         job.setJarByClass(SparkTripLengthDistribution.class);
 
@@ -80,12 +73,13 @@ public class SparkTripLengthDistribution {
         job.setCombinerClass(IntSumReducer.class);
         job.setReducerClass(IntSumReducer.class);
 
-        job.setOutputKeyClass(Text.class);
+        job.setOutputKeyClass(IntWritable.class);
         job.setOutputValueClass(IntWritable.class);
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
-
-
         System.exit(job.waitForCompletion(true) ? 0 : 1);
+        long end = System.currentTimeMillis();
+        logger.info("spend time " + (end - start) );
+        System.out.println("spend time " + (end - start) );
     }
 }

@@ -33,7 +33,7 @@ public class TripLengthDistribution {
 
     public static HashMap<Integer, Integer> getDistances(List<String> lines) {
         HashMap<Integer, Integer> distribution = new HashMap<>();
-        int max = 0;
+//        int max = 0;
         for (String line : lines) {
             String[] columns = line.split(" ");
             Double startLat = Double.valueOf(columns[2]);
@@ -53,21 +53,23 @@ public class TripLengthDistribution {
               }
             }
         }
-        for (Map.Entry<Integer, Integer> entry : distribution.entrySet()) {
-            if (entry.getValue() > max) {
-                max = entry.getValue();
-            }
-        }
-        System.out.println(max);
+//        for (Map.Entry<Integer, Integer> entry : distribution.entrySet()) {
+//            if (entry.getValue() > max) {
+//                max = entry.getValue();
+//            }
+//        }
+//        System.out.println(max);
         return distribution;
     }
 
     public static void main(String[] args) throws IOException {
+        long start = System.currentTimeMillis();
         List<String> lines = readTripFile(args[0]);
         HashMap<Integer, Integer> distribution = getDistances(lines);
-        System.out.println(distribution.size());
-
+//        System.out.println(distribution.size());
         writeTripLength(args[1], distribution);
+        long end = System.currentTimeMillis();
+        System.out.println(end - start);
 
     }
 

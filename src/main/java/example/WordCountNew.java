@@ -13,7 +13,13 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
+import org.apache.log4j.pattern.LogEvent;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class WordCountNew {
+    private static Logger logger=LoggerFactory.getLogger(WordCountNew.class);
 
     public static class TokenizerMapper
             extends Mapper<Object, Text, Text, IntWritable> {
@@ -23,6 +29,7 @@ public class WordCountNew {
 
         public void map(Object key, Text value, Context context
         ) throws IOException, InterruptedException {
+            logger.info("开始启动setup了哈哈哈哈");
             StringTokenizer itr = new StringTokenizer(value.toString());
             while (itr.hasMoreTokens()) {
                 word.set(itr.nextToken());
