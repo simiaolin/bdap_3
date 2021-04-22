@@ -1,9 +1,13 @@
+import utils.DistanceUtil;
+
+import java.beans.IntrospectionException;
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class TripLengthDistribution {
-    static final Double R = 6371.009;
 
     public static List<String> readTripFile(String input) throws IOException {
         BufferedReader br = new BufferedReader(new FileReader(input));
@@ -17,57 +21,84 @@ public class TripLengthDistribution {
         return lines;
     }
 
-    public static void writeTripLength(String output, List<Double>  distances) throws IOException {
+    public static void writeTripLength(String output, Map<Integer, Integer> distribution) throws IOException {
         BufferedWriter bw = new BufferedWriter(new FileWriter(output));
-        for (Double dist : distances) {
-            bw.write(String.valueOf(dist));
+        for (Map.Entry<Integer, Integer> dtb : distribution.entrySet()) {
+            bw.write(dtb.getKey() + "," + dtb.getValue());
             bw.newLine();
         }
         bw.close();
     }
 
-    public static List<Double> getDistances(List<String> lines) {
-        List<Double> distances = new ArrayList<>();
+
+    public static HashMap<Integer, Integer> getDistances(List<String> lines) {
+        HashMap<Integer, Integer> distribution = new HashMap<>();
+        int max = 0;
         for (String line : lines) {
             String[] columns = line.split(" ");
             Double startLat = Double.valueOf(columns[2]);
             Double startLong = Double.valueOf(columns[3]);
             Double endLat = Double.valueOf(columns[5]);
             Double endLong = Double.valueOf(columns[6]);
-            distances.add(getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
+            Integer distance = (int) Math.round(DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
+            Double beginTime = Double.valueOf(columns[1]);
+            Double endTime = Double.valueOf(columns[4]);
+            Double tripTime = endTime - beginTime;
+            Double speed = 3.6 * distance / tripTime;
+            if (0.0 < speed && speed < 300.0) {     //filter on speed
+              if (distribution.containsKey(distance)) {
+                  distribution.put(distance, distribution.get(distance) + 1);
+              } else {
+                  distribution.put(distance, 1);
+              }
+            }
         }
-        return distances;
+        for (Map.Entry<Integer, Integer> entry : distribution.entrySet()) {
+            if (entry.getValue() > max) {
+                max = entry.getValue();
+            }
+        }
+        System.out.println(max);
+        return distribution;
     }
-
-    //todo investigate other two
-    public static Double getPolarCoordinateDistance(double startLat, double startLong, double endLat, double endLong) {
-        Double startColatitudeInRadian = getColatitudeInRadian(startLat);
-        Double endColatitudeInRadian = getColatitudeInRadian(endLat);
-        Double deltaLong = (endLong - startLong) * Math.PI / 180;
-        return R * Math.sqrt(Math.pow(startColatitudeInRadian, 2) + Math.pow(endColatitudeInRadian, 2)
-                - 2 * startColatitudeInRadian * endColatitudeInRadian * Math.cos(deltaLong)) * 1000;
-    }
-
-   public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
-        Double startColatitudeInRadian = getColatitudeInRadian(startLat);
-        Double endColatitudeInRadian = getColatitudeInRadian(endLat);
-        Double deltaLat = (endLat - startLat) ;
-        Double deltaLong = (endLong - startLong) ;
-        Double midLat = (startLat + endLat) / 2 * Math.PI / 180;
-        return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
-    }
-
-    public static Double getColatitudeInRadian(Double degree) {
-        return Math.PI * (90 - degree) / 180;
-    }
-
 
     public static void main(String[] args) throws IOException {
         List<String> lines = readTripFile(args[0]);
-        List<Double> distances = getDistances(lines);
-        System.out.println(distances.size());
+        HashMap<Integer, Integer> distribution = getDistances(lines);
+        System.out.println(distribution.size());
 
-        writeTripLength(args[1], distances);
+        writeTripLength(args[1], distribution);
 
     }
+
 }
+
+//class DistancesAndMinMax {
+//    List<Double> distances;
+//    double maxDistance;
+//    double minDistance;
+//    DistancesAndMinMax(List<Double> distances, double maxDistance, double minDistance) {
+//        this.distances = distances;
+//        this.maxDistance = maxDistance;
+//        this.minDistance = minDistance;
+//    }
+//
+//    public int[] getDistribution(int bucketNum) {
+//        int[] distribution = new int[bucketNum];
+//        Double rangeInEveryBucket = (this.maxDistance - this.minDistance) / (bucketNum - 1);
+//        for (Double dis : distances) {
+//            int currentBucketNum = (int) Math.floor((dis - this.minDistance) / rangeInEveryBucket);
+//            distribution[currentBucketNum]++;
+//        }
+//        return distribution;
+//    }
+//
+//    public double[] getRange(int bucketNum) {
+//        double[] ranges = new double[bucketNum];
+//        Double rangeInEveryBucket = (this.maxDistance - this.minDistance) / (bucketNum - 1);
+//        for (int i = 0; i < bucketNum; i++) {
+//            ranges[i] = rangeInEveryBucket * (i + 0.5);
+//        }
+//        return ranges;
+//    }
+//}
