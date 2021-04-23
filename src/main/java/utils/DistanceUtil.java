@@ -24,4 +24,7 @@ public class DistanceUtil {
     }
 
 
+    public static Double getSystemMillis(String datetime) {
+        return 0.0;
+    }
 }

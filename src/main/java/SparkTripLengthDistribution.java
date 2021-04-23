@@ -69,7 +69,7 @@ public class SparkTripLengthDistribution {
         Job job = Job.getInstance(conf, "trip length");
         job.setJarByClass(SparkTripLengthDistribution.class);
 
-        job.setMapperClass(DistanceMapper.class);
+
         job.setCombinerClass(IntSumReducer.class);
         job.setReducerClass(IntSumReducer.class);
 
