@@ -61,7 +61,7 @@ class EmployeeMinMaxCountMapper extends Mapper<Object, Text, Text, CustomMinMaxT
     }
 }
 
- class EmployeeMinMaxCountReducer extends Reducer<Text, CustomMinMaxTuple, Text, CustomMinMaxTuple> {
+class EmployeeMinMaxCountReducer extends Reducer<Text, CustomMinMaxTuple, Text, CustomMinMaxTuple> {
     private CustomMinMaxTuple result = new CustomMinMaxTuple();
     public void reduce(Text key, Iterable<CustomMinMaxTuple> values, Context context)
             throws IOException, InterruptedException {
