@@ -11,9 +11,9 @@ import utils.DistanceUtil;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.StringTokenizer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -210,12 +210,22 @@ class SegmentMapper
          String[] segment = value.toString().split(",");
         Integer taxiNum = Integer.valueOf(segment[0]);
 
-        Double startTime = DistanceUtil.getSystemMillis(segment[1]);
+        Double startTime = null;
+        try {
+            startTime = DistanceUtil.getSecondsDouble(segment[1]);
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
         Double startLat = Double.valueOf(segment[2]);
         Double startLong = Double.valueOf(segment[3]);
         Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
 
-        Double endTime = DistanceUtil.getSystemMillis(segment[5]);
+        Double endTime = null;
+        try {
+            endTime = DistanceUtil.getSecondsDouble(segment[5]);
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
         Double endLat = Double.valueOf(segment[6]);
         Double endLong = Double.valueOf(segment[7]);
         Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
