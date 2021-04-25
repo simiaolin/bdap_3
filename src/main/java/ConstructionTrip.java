@@ -1,46 +1,96 @@
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.KeyValueTextInputFormat;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.ControlledJob;
+import org.apache.hadoop.mapreduce.lib.jobcontrol.JobControl;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import utils.DistanceUtil;
+import org.apache.hadoop.util.Tool;
+import org.apache.hadoop.util.ToolRunner;
+import utils.DistanceUtilA;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ConstructionTrip {
+public class ConstructionTrip extends Configured implements Tool {
     private static Logger logger = LoggerFactory.getLogger(ConstructionTrip.class);
+    public int run(String[] args) throws Exception  {
+
+        Configuration conf1 = getConf();
+        Job job1 = Job.getInstance(conf1, "trip construction");
+        job1.setJarByClass(ConstructionTrip.class);
+        job1.setMapperClass(SegmentMapper.class);
+        job1.setReducerClass(SegmentReducer.class);
+        job1.setOutputKeyClass(IntWritable.class);
+        job1.setOutputValueClass(TimePosTuple.class);
+        FileInputFormat.addInputPath(job1, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job1, new Path(args[1]));
+
+
+        Configuration conf2 = getConf();
+        Job job2 = Job.getInstance(conf2, "revenue distribution");
+        FileInputFormat.setInputPaths(job2, new Path(args[1]));
+        FileOutputFormat.setOutputPath(job2, new Path(args[2]));
+        job2.setMapperClass(RevenueMapper.class);
+        job2.setReducerClass(RevenueReducer.class);
+        job2.setOutputKeyClass(YearAndMonthWritable.class);
+        job2.setOutputValueClass(DoubleWritable.class);
+//        job2.setSortComparatorClass(YearAndMonthComparator.class);
+
+        job2.setInputFormatClass(KeyValueTextInputFormat.class);
+
+        JobControl jobControl = new JobControl("job chain");
+        ControlledJob controlledJob1 = new ControlledJob(conf1);
+        controlledJob1.setJob(job1);
+        jobControl.addJob(controlledJob1);
+
+        ControlledJob controlledJob2 = new ControlledJob(conf2);
+        controlledJob2.setJob(job2);
+        controlledJob2.addDependingJob(controlledJob1);
+        jobControl.addJob(controlledJob2);
+
+        Thread jobControlThread = new Thread(jobControl);
+        jobControlThread.start();
+
+        while (!jobControl.allFinished()) {
+            System.out.println("Jobs in waiting state: " + jobControl.getWaitingJobList().size());
+            System.out.println("Jobs in ready state: " + jobControl.getReadyJobsList().size());
+            System.out.println("Jobs in running state: " + jobControl.getRunningJobList().size());
+            System.out.println("Jobs in success state: " + jobControl.getSuccessfulJobList().size());
+            System.out.println("Jobs in failed state: " + jobControl.getFailedJobList().size());
+            try {
+                Thread.sleep(5000);
+            } catch (Exception e) {
+
+            }
+
+        }
+        System.exit(0);
+        return (job1.waitForCompletion(true) ? 0 : 1);
+    }
 
     public static void main(String[] args) throws Exception {
-        long start = System.currentTimeMillis();
-        Configuration conf = new Configuration();
-
-        Job job = Job.getInstance(conf, "trip construction");
-        job.setJarByClass(ConstructionTrip.class);
-
-        job.setMapperClass(SegmentMapper.class);
-//        job.setCombinerClass(SegmentReducer.class);
-        job.setReducerClass(SegmentReducer.class);
-
-        job.setOutputKeyClass(IntWritable.class);
-        job.setOutputValueClass(TimePosTuple.class);
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
-        long end = System.currentTimeMillis();
-        logger.info("spend time " + (end - start));
-        System.out.println("spend time " + (end - start));
+        int exitCode = ToolRunner.run(new ConstructionTrip(), args);
+        System.exit(exitCode);
     }
+
+
 }
 
 
@@ -150,6 +200,58 @@ class TimePosFull {
     }
 }
 
+class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
+    private Integer year;
+    private Integer month;
+
+    public YearAndMonthWritable() {
+
+    }
+    public YearAndMonthWritable(Integer year, Integer month) {
+        this.year = year;
+        this.month = month;
+    }
+
+    public Integer getYear() {
+        return year;
+    }
+
+    public void setYear(Integer year) {
+        this.year = year;
+    }
+
+    public Integer getMonth() {
+        return month;
+    }
+
+    public void setMonth(Integer month) {
+        this.month = month;
+    }
+
+    @Override
+    public void write(DataOutput dataOutput) throws IOException {
+        dataOutput.writeInt(year);
+        dataOutput.writeInt(month);
+    }
+
+    @Override
+    public void readFields(DataInput dataInput) throws IOException {
+        year = dataInput.readInt();
+        month = dataInput.readInt();
+    }
+
+    @Override
+    public String toString() {
+        return this.getYear() + "\t" + this.getMonth();
+    }
+
+    @Override
+    public int compareTo(YearAndMonthWritable o) {
+        //todo fix  it
+        return 0;
+    }
+}
+
 class TimePosFullList implements Writable {
     private List<TimePosFull> segmentList;
 
@@ -207,12 +309,12 @@ class SegmentMapper
         extends Mapper<Object, Text, IntWritable, TimePosTuple> {
     public void map(Object key, Text value, Context context
     ) throws IOException, InterruptedException {
-         String[] segment = value.toString().split(",");
+        String[] segment = value.toString().split(",");
         Integer taxiNum = Integer.valueOf(segment[0]);
 
         Double startTime = null;
         try {
-            startTime = DistanceUtil.getSecondsDouble(segment[1]);
+            startTime = DistanceUtilA.getSecondsDouble(segment[1]);
         } catch (ParseException e) {
             e.printStackTrace();
         }
@@ -222,7 +324,7 @@ class SegmentMapper
 
         Double endTime = null;
         try {
-            endTime = DistanceUtil.getSecondsDouble(segment[5]);
+            endTime = DistanceUtilA.getSecondsDouble(segment[5]);
         } catch (ParseException e) {
             e.printStackTrace();
         }
@@ -250,6 +352,7 @@ class SegmentReducer
         timePosTupleList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
         boolean formerStatus = true;
         List<TimePosFull> currentTrip = new ArrayList<>();
+
         for (TimePosTuple timePosTuple : timePosTupleList) {
             if (timePosTuple.isEmpty() == false) {  // the car is full
                 if (formerStatus == true) {
@@ -258,15 +361,86 @@ class SegmentReducer
                 currentTrip.add(new TimePosFull(timePosTuple.getTime(), timePosTuple.getLatitude(), timePosTuple.getLongtitude()));
                 formerStatus = false;
             } else {
-                if (formerStatus == false) {        //right after the end of a trip
+                if (formerStatus == false && currentTrip.size() > 1) {        //right after the end of a trip
+//                    write(context, currentTrip);
                     context.write(key, new TimePosFullList(currentTrip));
                 }
+
                 formerStatus = true;
             }
         }
         if (formerStatus == false && currentTrip.size() > 1) {
+//            write(context, currentTrip);
+
             context.write(key, new TimePosFullList(currentTrip));
         }
 
     }
+
 }
+
+class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
+    public void map(Object key, Text values,
+                    Context context
+    ) throws IOException, InterruptedException {
+        System.out.println("hh");
+        context.write(new YearAndMonthWritable(1, 3), new DoubleWritable(1.0));
+    }
+
+
+    public void write(Reducer.Context context, List<TimePosFull> fullSegmentList) {
+        if (hasPastByAirport(fullSegmentList)) {
+            TimePosFull start = fullSegmentList.get(0);
+            TimePosFull end = fullSegmentList.get(fullSegmentList.size() - 1);
+            if (isRouteReasonable(start, end)) {
+                Double revenue = getRevenueFromPos(start, end);
+                int year = 0;
+                int month = 0;
+                YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable(year, month);
+//                context.write(yearAndMonthWritable, new DoubleWritable(revenue));
+            }
+        }
+    }
+
+
+    public static boolean hasPastByAirport(List<TimePosFull> fullSegmentList) {
+        return false;
+    }
+
+    public static boolean isRouteReasonable(TimePosFull start, TimePosFull end) {
+        return false;
+    }
+
+    public static double getRevenueFromPos(TimePosFull start, TimePosFull end) {
+        return 0.0;
+    }
+
+
+    public static double getRevenueFromDistance(double distance) {
+        return 0.0;
+    }
+
+}
+
+class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearAndMonthWritable, DoubleWritable> {
+    public void reduce(YearAndMonthWritable key, Iterable<DoubleWritable> values, Context context) throws IOException, InterruptedException {
+        System.out.println("bb");
+        context.write(new YearAndMonthWritable(1, 3), new DoubleWritable(1.0));
+
+    }
+}
+
+//class YearAndMonthComparator extends WritableComparator {
+//
+//    public YearAndMonthComparator() {
+//        super(YearAndMonthWritable.class);
+//    }
+//
+//    @Override
+//    public int compare(byte[] b1, int s1, int l1, byte[] b2,
+//                       int s2, int l2) {
+//        Integer v1 = ByteBuffer.wrap(b1, s1, l1).getInt();
+//        Integer v2 = ByteBuffer.wrap(b2, s2, l2).getInt();
+//        return v1.compareTo(v2) * (-1);
+//    }
+//}

@@ -1,6 +1,5 @@
-import utils.DistanceUtil;
+import utils.DistanceUtilA;
 
-import java.beans.IntrospectionException;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,7 +39,7 @@ public class TripLengthDistribution {
             Double startLong = Double.valueOf(columns[3]);
             Double endLat = Double.valueOf(columns[5]);
             Double endLong = Double.valueOf(columns[6]);
-            Integer distance = (int) Math.round(DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
+            Integer distance = (int) Math.round(DistanceUtilA.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
             Double beginTime = Double.valueOf(columns[1]);
             Double endTime = Double.valueOf(columns[4]);
             Double tripTime = endTime - beginTime;

@@ -7,12 +7,10 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import utils.DistanceUtil;
+import utils.DistanceUtilA;
 
 import java.io.IOException;
 import java.util.StringTokenizer;
-
-import org.apache.log4j.pattern.LogEvent;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +33,7 @@ public class SparkTripLengthDistribution {
             Double endTime = Double.valueOf(itr.nextToken());
             Double endLat = Double.valueOf(itr.nextToken());
             Double endLong = Double.valueOf(itr.nextToken());
-            int distance = (int)Math.round(DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
+            int distance = (int)Math.round(DistanceUtilA.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
             Double tripTime = endTime - beginTime;
             Double speed = 3.6 * distance / tripTime;
             distanceIntWritable.set(distance);
