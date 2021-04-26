@@ -12,12 +12,13 @@ import org.apache.hadoop.mapreduce.lib.jobcontrol.JobControl;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-import utils.DistanceUtilA;
 
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -26,7 +27,8 @@ import org.slf4j.LoggerFactory;
 
 public class ConstructionTrip extends Configured implements Tool {
     private static Logger logger = LoggerFactory.getLogger(ConstructionTrip.class);
-    public int run(String[] args) throws Exception  {
+
+    public int run(String[] args) throws Exception {
 
         Configuration conf1 = getConf();
         Job job1 = Job.getInstance(conf1, "trip construction");
@@ -34,7 +36,7 @@ public class ConstructionTrip extends Configured implements Tool {
         job1.setMapperClass(SegmentMapper.class);
         job1.setReducerClass(SegmentReducer.class);
         job1.setOutputKeyClass(IntWritable.class);
-        job1.setOutputValueClass(TimePosTuple.class);
+        job1.setOutputValueClass(TimePosTupleWritable.class);
         FileInputFormat.addInputPath(job1, new Path(args[0]));
         FileOutputFormat.setOutputPath(job1, new Path(args[1]));
 
@@ -90,20 +92,20 @@ public class ConstructionTrip extends Configured implements Tool {
 }
 
 
-class TimePosTuple implements Writable {
+class TimePosTupleWritable implements Writable {
     private Double time;
     private Double latitude;
     private Double longtitude;
     private Boolean isEmpty;
 
-    public TimePosTuple(Double time, Double latitude, Double longtitude, boolean isEmpty) {
+    public TimePosTupleWritable(Double time, Double latitude, Double longtitude, boolean isEmpty) {
         this.time = time;
         this.latitude = latitude;
         this.longtitude = longtitude;
         this.isEmpty = isEmpty;
     }
 
-    public TimePosTuple() {
+    public TimePosTupleWritable() {
     }
 
     public Double getTime() {
@@ -307,82 +309,85 @@ class TimePosFullList implements Writable {
 
 
 class SegmentMapper
-        extends Mapper<Object, Text, IntWritable, TimePosTuple> {
+        extends Mapper<Object, Text, IntWritable, TimePosTupleWritable> {
+    private IntWritable taxiNumWritable = new IntWritable();
+    private TimePosTupleWritable timePosTupleWritable = new TimePosTupleWritable(0.0, 0.0, 0.0, false);
     public void map(Object key, Text value, Context context
     ) throws IOException, InterruptedException {
         String[] segment = value.toString().split(",");
-        Integer taxiNum = Integer.valueOf(segment[0]);
-
-        Double startTime = null;
         try {
-            startTime = DistanceUtilA.getSecondsDouble(segment[1]);
+            Integer taxiNum = Integer.valueOf(segment[0]);
+            Double startTime = DistanceUtil.getSecondsDouble(segment[1]);
+            Double startLat = Double.valueOf(segment[2]);
+            Double startLong = Double.valueOf(segment[3]);
+            Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
+
+            Double endTime = DistanceUtil.getSecondsDouble(segment[5]);
+            Double endLat = Double.valueOf(segment[6]);
+            Double endLong = Double.valueOf(segment[7]);
+            Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
+            taxiNumWritable.set(taxiNum);
+
+            timePosTupleWritable.setEmpty(startStatus);
+            timePosTupleWritable.setTime(startTime);
+            timePosTupleWritable.setLatitude(startLat);
+            timePosTupleWritable.setLongtitude(startLong);
+            context.write(taxiNumWritable, timePosTupleWritable);
+
+            timePosTupleWritable.setEmpty(endStatus);
+            timePosTupleWritable.setTime(endTime);
+            timePosTupleWritable.setLatitude(endLat);
+            timePosTupleWritable.setLongtitude(endLong);
+            context.write(taxiNumWritable, timePosTupleWritable);
         } catch (ParseException e) {
             e.printStackTrace();
         }
-        Double startLat = Double.valueOf(segment[2]);
-        Double startLong = Double.valueOf(segment[3]);
-        Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
-
-        Double endTime = null;
-        try {
-            endTime = DistanceUtilA.getSecondsDouble(segment[5]);
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        Double endLat = Double.valueOf(segment[6]);
-        Double endLong = Double.valueOf(segment[7]);
-        Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
-
-        context.write(new IntWritable(taxiNum), new TimePosTuple(startTime, startLat, startLong, startStatus));
-        context.write(new IntWritable(taxiNum), new TimePosTuple(endTime, endLat, endLong, endStatus));
     }
 }
 
 
 class SegmentReducer
-        extends Reducer<IntWritable, TimePosTuple, IntWritable, TimePosFullList> {
-
-    public void reduce(IntWritable key, Iterable<TimePosTuple> values,
+        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TimePosFullList> {
+    private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
+    private List<TimePosFull> currentTrip = new ArrayList<>();
+    public void reduce(IntWritable key, Iterable<TimePosTupleWritable> values,
                        Context context
     ) throws IOException, InterruptedException {
-        List<TimePosTuple> timePosTupleList = new ArrayList<>();
-        for (TimePosTuple val : values) {
-            timePosTupleList.add(new TimePosTuple(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
+//        List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList<>();
+        for (TimePosTupleWritable val : values) {
+            timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
         }
 
-        timePosTupleList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
+        timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
         boolean formerStatus = true;
-        List<TimePosFull> currentTrip = new ArrayList<>();
 
-        for (TimePosTuple timePosTuple : timePosTupleList) {
-            if (timePosTuple.isEmpty() == false) {  // the car is full
+
+        for (TimePosTupleWritable timePosTupleWritable : timePosTupleWritableList) {
+            if (timePosTupleWritable.isEmpty() == false) {  // the car is full
                 if (formerStatus == true) {
                     currentTrip.clear();   //the beginning of a new trip
                 }
-                currentTrip.add(new TimePosFull(timePosTuple.getTime(), timePosTuple.getLatitude(), timePosTuple.getLongtitude()));
+                currentTrip.add(new TimePosFull(timePosTupleWritable.getTime(), timePosTupleWritable.getLatitude(), timePosTupleWritable.getLongtitude()));
                 formerStatus = false;
             } else {
                 if (formerStatus == false && currentTrip.size() > 1) {        //right after the end of a trip
 //                    write(context, currentTrip);
                     context.write(key, new TimePosFullList(currentTrip));
                 }
-
                 formerStatus = true;
             }
         }
         if (formerStatus == false && currentTrip.size() > 1) {
-
             context.write(key, new TimePosFullList(currentTrip));
         }
-
     }
-
 }
 
 class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
     private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
     private DoubleWritable revenueWritable = new DoubleWritable();
     private List<TimePosFull> fullSegmentList = new ArrayList<>();
+
     public void map(Object key, Text value,
                     Context context
     ) throws IOException, InterruptedException {
@@ -400,7 +405,7 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
                 TimePosFull end = fullSegmentList.get(size - 1);
                 if (isRouteReasonable(start, end)) {
                     double revenue = getRevenueFromPos(start, end);
-                    LocalDateTime localDateTime  = DistanceUtilA.getLocalDatetimeFromDouble(start.getTime());
+                    LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
                     yearAndMonthWritable.setYear(localDateTime.getYear());
                     yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
                     revenueWritable.set(revenue);
@@ -425,7 +430,7 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
         double startLong = start.getLongtitude();
         double endLat = end.getLatitude();
         double endLong = end.getLongtitude();
-        double distance = DistanceUtilA.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+        double distance = DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
         return getRevenueFromDistance(distance);
     }
 
@@ -450,3 +455,56 @@ class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearA
     }
 }
 
+class DistanceUtil {
+    static final Double R = 6371.009;
+    static final String format = "yyyy-MM-dd HH:mm:ss";    //"yyyy-mm-dd hh:mm:ss" wrong version
+    static final TimeZone zone = TimeZone.getTimeZone("America/Los Angeles");
+    static SimpleDateFormat sdf = new SimpleDateFormat(format);
+
+    static {
+        sdf.setTimeZone(zone);
+    }
+
+    //todo investigate other two
+    public static Double getPolarCoordinateDistance(double startLat, double startLong, double endLat, double endLong) {
+        Double startColatitudeInRadian = getColatitudeInRadian(startLat);
+        Double endColatitudeInRadian = getColatitudeInRadian(endLat);
+        Double deltaLong = (endLong - startLong) * Math.PI / 180;
+        return R * Math.sqrt(Math.pow(startColatitudeInRadian, 2) + Math.pow(endColatitudeInRadian, 2)
+                - 2 * startColatitudeInRadian * endColatitudeInRadian * Math.cos(deltaLong)) * 1000;
+    }
+
+    public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
+        Double deltaLat = (endLat - startLat);
+        Double deltaLong = (endLong - startLong);
+        Double midLat = (startLat + endLat) / 2 * Math.PI / 180;
+        return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
+    }
+
+    public static Double getColatitudeInRadian(Double degree) {
+        return Math.PI * (90 - degree) / 180;
+    }
+
+
+    public static Double getSecondsDouble(String datetime) throws ParseException {
+        Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
+        return Double.valueOf(date.getTime() / 1000);
+    }
+
+    public static long getSecondsLong(String datetime) throws ParseException {
+        Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
+        long milli = date.getTime();
+        return milli / 1000l;
+    }
+
+    public static String getDateFromLong(long datetime) {
+        Date date = new Date(datetime);
+        String formattedDate = sdf.format(date);
+        return formattedDate;
+    }
+
+    public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
+        return localDateTime;
+    }
+}
