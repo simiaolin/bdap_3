@@ -2,6 +2,8 @@ package utils;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.TimeZone;
 
@@ -50,6 +52,11 @@ public class DistanceUtilA {
         Date date = new Date(datetime);
         String formattedDate = sdf.format(date);
         return formattedDate;
+    }
+
+    public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
+        return localDateTime;
     }
 
 

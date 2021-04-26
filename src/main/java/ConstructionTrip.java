@@ -17,13 +17,9 @@ import utils.DistanceUtilA;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.TimeZone;
+import java.time.LocalDateTime;
+import java.util.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,9 +47,9 @@ public class ConstructionTrip extends Configured implements Tool {
         job2.setReducerClass(RevenueReducer.class);
         job2.setOutputKeyClass(YearAndMonthWritable.class);
         job2.setOutputValueClass(DoubleWritable.class);
-//        job2.setSortComparatorClass(YearAndMonthComparator.class);
 
         job2.setInputFormatClass(KeyValueTextInputFormat.class);
+//        job2.setInputFormatClass(SequenceFileInputFormat.class);
 
         JobControl jobControl = new JobControl("job chain");
         ControlledJob controlledJob1 = new ControlledJob(conf1);
@@ -169,6 +165,9 @@ class TimePosFull {
     private Double latitude;
     private Double longtitude;
 
+    public TimePosFull() {
+
+    }
     public TimePosFull(Double time, Double latitude, Double longtitude) {
         this.time = time;
         this.latitude = latitude;
@@ -240,6 +239,7 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
         month = dataInput.readInt();
     }
 
+    //Todo:
     @Override
     public String toString() {
         return this.getYear() + "\t" + this.getMonth();
@@ -291,7 +291,8 @@ class TimePosFullList implements Writable {
 
     @Override
     public String toString() {
-        StringBuilder str = new StringBuilder(segmentList.size());
+        StringBuilder str = new StringBuilder();
+        str.append(segmentList.size());
         for (int i = 0; i < segmentList.size(); i++) {
             str.append("\t");
             str.append(segmentList.get(i).getTime());
@@ -370,7 +371,6 @@ class SegmentReducer
             }
         }
         if (formerStatus == false && currentTrip.size() > 1) {
-//            write(context, currentTrip);
 
             context.write(key, new TimePosFullList(currentTrip));
         }
@@ -380,67 +380,73 @@ class SegmentReducer
 }
 
 class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
-    public void map(Object key, Text values,
+    private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
+    private DoubleWritable revenueWritable = new DoubleWritable();
+    private List<TimePosFull> fullSegmentList = new ArrayList<>();
+    public void map(Object key, Text value,
                     Context context
     ) throws IOException, InterruptedException {
-        System.out.println("hh");
-        context.write(new YearAndMonthWritable(1, 3), new DoubleWritable(1.0));
-    }
-
-
-    public void write(Reducer.Context context, List<TimePosFull> fullSegmentList) {
-        if (hasPastByAirport(fullSegmentList)) {
-            TimePosFull start = fullSegmentList.get(0);
-            TimePosFull end = fullSegmentList.get(fullSegmentList.size() - 1);
-            if (isRouteReasonable(start, end)) {
-                Double revenue = getRevenueFromPos(start, end);
-                int year = 0;
-                int month = 0;
-                YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable(year, month);
-//                context.write(yearAndMonthWritable, new DoubleWritable(revenue));
+        StringTokenizer str = new StringTokenizer(value.toString());
+        int size = Integer.valueOf(str.nextToken());
+        if (size > 1) {
+            for (int i = 0; i < size; i++) {
+                double time = Double.valueOf(str.nextToken());
+                double latitude = Double.valueOf(str.nextToken());
+                double longtitude = Double.valueOf(str.nextToken());
+                fullSegmentList.add(new TimePosFull(time, latitude, longtitude));
+            }
+            if (hasPastByAirport(fullSegmentList)) {
+                TimePosFull start = fullSegmentList.get(0);
+                TimePosFull end = fullSegmentList.get(size - 1);
+                if (isRouteReasonable(start, end)) {
+                    double revenue = getRevenueFromPos(start, end);
+                    LocalDateTime localDateTime  = DistanceUtilA.getLocalDatetimeFromDouble(start.getTime());
+                    yearAndMonthWritable.setYear(localDateTime.getYear());
+                    yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
+                    revenueWritable.set(revenue);
+                    context.write(yearAndMonthWritable, revenueWritable);
+                }
             }
         }
     }
 
-
+    //todo
     public static boolean hasPastByAirport(List<TimePosFull> fullSegmentList) {
-        return false;
+        return true;
     }
 
+    //todo
     public static boolean isRouteReasonable(TimePosFull start, TimePosFull end) {
-        return false;
+        return true;
     }
 
     public static double getRevenueFromPos(TimePosFull start, TimePosFull end) {
-        return 0.0;
+        double startLat = start.getLatitude();
+        double startLong = start.getLongtitude();
+        double endLat = end.getLatitude();
+        double endLong = end.getLongtitude();
+        double distance = DistanceUtilA.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+        return getRevenueFromDistance(distance);
     }
 
 
     public static double getRevenueFromDistance(double distance) {
-        return 0.0;
+        return 3.5 + distance * 1.71 / 1000;
     }
 
 }
+
 
 class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearAndMonthWritable, DoubleWritable> {
-    public void reduce(YearAndMonthWritable key, Iterable<DoubleWritable> values, Context context) throws IOException, InterruptedException {
-        System.out.println("bb");
-        context.write(new YearAndMonthWritable(1, 3), new DoubleWritable(1.0));
+    private DoubleWritable result = new DoubleWritable();
 
+    public void reduce(YearAndMonthWritable key, Iterable<DoubleWritable> values, Context context) throws IOException, InterruptedException {
+        double sum = 0;
+        for (DoubleWritable val : values) {
+            sum += val.get();
+        }
+        result.set(sum);
+        context.write(key, result);
     }
 }
 
-//class YearAndMonthComparator extends WritableComparator {
-//
-//    public YearAndMonthComparator() {
-//        super(YearAndMonthWritable.class);
-//    }
-//
-//    @Override
-//    public int compare(byte[] b1, int s1, int l1, byte[] b2,
-//                       int s2, int l2) {
-//        Integer v1 = ByteBuffer.wrap(b1, s1, l1).getInt();
-//        Integer v2 = ByteBuffer.wrap(b2, s2, l2).getInt();
-//        return v1.compareTo(v2) * (-1);
-//    }
-//}
