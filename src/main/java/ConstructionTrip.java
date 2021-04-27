@@ -264,10 +264,10 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     }
 }
 
-class TimePosFullList implements Writable {
+class TimePosFullListWritable implements Writable {
     private List<TimePosFull> segmentList;
 
-    public TimePosFullList(List<TimePosFull> segmentList) {
+    public TimePosFullListWritable(List<TimePosFull> segmentList) {
         this.segmentList = segmentList;
     }
 
@@ -322,6 +322,7 @@ class SegmentMapper
         extends Mapper<Object, Text, IntWritable, TimePosTupleWritable> {
     private IntWritable taxiNumWritable = new IntWritable();
     private TimePosTupleWritable timePosTupleWritable = new TimePosTupleWritable(0.0, 0.0, 0.0, false);
+
     public void map(Object key, Text value, Context context
     ) throws IOException, InterruptedException {
         String[] segment = value.toString().split(",");
@@ -357,40 +358,54 @@ class SegmentMapper
 
 
 class SegmentReducer
-        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TimePosFullList> {
+        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TimePosFullListWritable> {
     private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
-    private List<TimePosFull> currentTrip = new ArrayList<>();
+    private List<TimePosFull> timePosFullList = new ArrayList<>();
+    private TimePosFull start = new TimePosFull();
+    private TimePosFull end = new TimePosFull();
+
     public void reduce(IntWritable key, Iterable<TimePosTupleWritable> values,
                        Context context
     ) throws IOException, InterruptedException {
-//        List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList<>();
         timePosTupleWritableList.clear();
         for (TimePosTupleWritable val : values) {
             timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
         }
-
         timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
         boolean formerStatus = true;
-
-
-        for (TimePosTupleWritable timePosTupleWritable : timePosTupleWritableList) {
-            if (timePosTupleWritable.isEmpty() == false) {  // the car is full
+        int firstFullIndex = 0;
+        int lastFullIndex = 0;
+        for (int i = 0; i < timePosTupleWritableList.size(); i++) {
+            if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
                 if (formerStatus == true) {
-                    currentTrip.clear();   //the beginning of a new trip
+                    //the beginning of a new trip
+                    firstFullIndex = i;
+                } else {
+                    lastFullIndex = i;
                 }
-                currentTrip.add(new TimePosFull(timePosTupleWritable.getTime(), timePosTupleWritable.getLatitude(), timePosTupleWritable.getLongtitude()));
                 formerStatus = false;
             } else {
-                if (formerStatus == false && currentTrip.size() > 1) {        //right after the end of a trip
-//                    write(context, currentTrip);
-                    context.write(key, new TimePosFullList(currentTrip));
+                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty
+                    writeContext(context, firstFullIndex, lastFullIndex, key);
                 }
                 formerStatus = true;
             }
         }
-        if (formerStatus == false && currentTrip.size() > 1) {
-            context.write(key, new TimePosFullList(currentTrip));
+        if (formerStatus == false && lastFullIndex > firstFullIndex) {
+            writeContext(context, firstFullIndex, lastFullIndex, key);
+
         }
+    }
+
+    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key) throws IOException, InterruptedException {
+        start.setTime(timePosTupleWritableList.get(firstFullIndex).getTime());
+        start.setLatitude(timePosTupleWritableList.get(firstFullIndex).getLatitude());
+        start.setLongtitude(timePosTupleWritableList.get(firstFullIndex).getLongtitude());
+        end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
+        end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
+        end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
+        timePosFullList = Arrays.asList(start, end);
+        context.write(key, new TimePosFullListWritable(timePosFullList));
     }
 }
 
