@@ -51,8 +51,13 @@ public class ConstructionTrip extends Configured implements Tool {
         job2.setOutputValueClass(DoubleWritable.class);
 
         job2.setInputFormatClass(KeyValueTextInputFormat.class);
+        int splitSize = Integer.valueOf(args[3]);
+        int reduceTaskNum = Integer.valueOf(args[4]);
 //        job2.setInputFormatClass(SequenceFileInputFormat.class);
-
+        FileInputFormat.setMaxInputSplitSize(job1, splitSize);
+        FileInputFormat.setMaxInputSplitSize(job2, splitSize);
+        job1.setNumReduceTasks(reduceTaskNum);
+        job2.setNumReduceTasks(reduceTaskNum);
         JobControl jobControl = new JobControl("job chain");
         ControlledJob controlledJob1 = new ControlledJob(conf1);
         controlledJob1.setJob(job1);
@@ -249,8 +254,13 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
 
     @Override
     public int compareTo(YearAndMonthWritable o) {
-        //todo fix  it
-        return 0;
+        if (year > o.getYear()) {
+            return 1;
+        } else if (year < o.getYear()) {
+            return -1;
+        } else {
+            return Integer.compare(month, o.getMonth());
+        }
     }
 }
 
@@ -354,6 +364,7 @@ class SegmentReducer
                        Context context
     ) throws IOException, InterruptedException {
 //        List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList<>();
+        timePosTupleWritableList.clear();
         for (TimePosTupleWritable val : values) {
             timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
         }
@@ -394,6 +405,7 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
         StringTokenizer str = new StringTokenizer(value.toString());
         int size = Integer.valueOf(str.nextToken());
         if (size > 1) {
+            fullSegmentList.clear();
             for (int i = 0; i < size; i++) {
                 double time = Double.valueOf(str.nextToken());
                 double latitude = Double.valueOf(str.nextToken());
