@@ -175,6 +175,7 @@ class TimePosFull {
     public TimePosFull() {
 
     }
+
     public TimePosFull(Double time, Double latitude, Double longtitude) {
         this.time = time;
         this.latitude = latitude;
@@ -213,6 +214,7 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     public YearAndMonthWritable() {
 
     }
+
     public YearAndMonthWritable(Integer year, Integer month) {
         this.year = year;
         this.month = month;
@@ -264,55 +266,87 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     }
 }
 
-class TimePosFullListWritable implements Writable {
-    private List<TimePosFull> segmentList;
+class TripWritable implements Writable {
+    private boolean hasPassByAirport;
+    private TimePosFull start;
+    private TimePosFull end;
 
-    public TimePosFullListWritable(List<TimePosFull> segmentList) {
-        this.segmentList = segmentList;
+    public TripWritable() {
     }
 
-    public List<TimePosFull> getSegmentList() {
-        return segmentList;
+    public TripWritable(boolean hasPassByAirport, TimePosFull start, TimePosFull end) {
+        this.start = start;
+        this.end = end;
+        this.hasPassByAirport = hasPassByAirport;
     }
 
-    public void setSegmentList(List<TimePosFull> segmentList) {
-        this.segmentList = segmentList;
+    public TimePosFull getStart() {
+        return start;
+    }
+
+    public void setStart(TimePosFull start) {
+        this.start = start;
+    }
+
+    public TimePosFull getEnd() {
+        return end;
+    }
+
+    public void setEnd(TimePosFull end) {
+        this.end = end;
+    }
+
+    public boolean isHasPassByAirport() {
+        return hasPassByAirport;
+    }
+
+    public void setHasPassByAirport(boolean hasPassByAirport) {
+        this.hasPassByAirport = hasPassByAirport;
     }
 
     @Override
     public void write(DataOutput dataOutput) throws IOException {
-        dataOutput.writeInt(segmentList.size());
-        for (TimePosFull segment : segmentList) {
-            dataOutput.writeDouble(segment.getTime());
-            dataOutput.writeDouble(segment.getLatitude());
-            dataOutput.writeDouble(segment.getLongtitude());
-        }
+        dataOutput.writeBoolean(isHasPassByAirport());
+        write(dataOutput, start);
+        write(dataOutput, end);
+    }
+
+    public void write(DataOutput dataOutput, TimePosFull timePosFull) throws IOException {
+        dataOutput.writeDouble(timePosFull.getTime());
+        dataOutput.writeDouble(timePosFull.getLatitude());
+        dataOutput.writeDouble(timePosFull.getLongtitude());
     }
 
     @Override
     public void readFields(DataInput dataInput) throws IOException {
+        hasPassByAirport = dataInput.readBoolean();
 
-        Integer size = dataInput.readInt();
-        for (int i = 0; i < size; i++) {
-            Double time = dataInput.readDouble();
-            Double latitude = dataInput.readDouble();
-            Double longtitude = dataInput.readDouble();
-            segmentList.add(new TimePosFull(time, latitude, longtitude));
-        }
+        start.setTime(dataInput.readDouble());
+        start.setLatitude(dataInput.readDouble());
+        start.setLongtitude(dataInput.readDouble());
+        end.setTime(dataInput.readDouble());
+        end.setLatitude(dataInput.readDouble());
+        end.setLongtitude(dataInput.readDouble());
+
     }
 
     @Override
     public String toString() {
         StringBuilder str = new StringBuilder();
-        str.append(segmentList.size());
-        for (int i = 0; i < segmentList.size(); i++) {
-            str.append("\t");
-            str.append(segmentList.get(i).getTime());
-            str.append("\t");
-            str.append(segmentList.get(i).getLatitude());
-            str.append("\t");
-            str.append(segmentList.get(i).getLongtitude());
-        }
+        str.append(hasPassByAirport);
+        str.append(toString(start));
+        str.append(toString(end));
+        return str.toString();
+    }
+
+    public String toString(TimePosFull timePosFull) {
+        StringBuilder str = new StringBuilder();
+        str.append("\t");
+        str.append(timePosFull.getTime());
+        str.append("\t");
+        str.append(timePosFull.getLatitude());
+        str.append("\t");
+        str.append(timePosFull.getLongtitude());
         return str.toString();
     }
 }
@@ -358,9 +392,8 @@ class SegmentMapper
 
 
 class SegmentReducer
-        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TimePosFullListWritable> {
+        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TripWritable> {
     private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
-    private List<TimePosFull> timePosFullList = new ArrayList<>();
     private TimePosFull start = new TimePosFull();
     private TimePosFull end = new TimePosFull();
 
@@ -404,8 +437,7 @@ class SegmentReducer
         end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
         end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
         end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
-        timePosFullList = Arrays.asList(start, end);
-        context.write(key, new TimePosFullListWritable(timePosFullList));
+        context.write(key, new TripWritable(true, start, end));
     }
 }
 
@@ -413,32 +445,32 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
     private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
     private DoubleWritable revenueWritable = new DoubleWritable();
     private List<TimePosFull> fullSegmentList = new ArrayList<>();
+    private TimePosFull start = new TimePosFull();
+    private TimePosFull end = new TimePosFull();
 
     public void map(Object key, Text value,
                     Context context
     ) throws IOException, InterruptedException {
         StringTokenizer str = new StringTokenizer(value.toString());
-        int size = Integer.valueOf(str.nextToken());
-        if (size > 1) {
+        boolean hasPassByAirport = Boolean.valueOf(str.nextToken());
+        if (hasPassByAirport) {
             fullSegmentList.clear();
-            for (int i = 0; i < size; i++) {
-                double time = Double.valueOf(str.nextToken());
-                double latitude = Double.valueOf(str.nextToken());
-                double longtitude = Double.valueOf(str.nextToken());
-                fullSegmentList.add(new TimePosFull(time, latitude, longtitude));
+            start.setTime(Double.valueOf(str.nextToken()));
+            start.setLatitude(Double.valueOf(str.nextToken()));
+            start.setLongtitude(Double.valueOf(str.nextToken()));
+            end.setTime(Double.valueOf(str.nextToken()));
+            end.setLatitude(Double.valueOf(str.nextToken()));
+            end.setLongtitude(Double.valueOf(str.nextToken()));
+
+            if (isRouteReasonable(start, end)) {
+                double revenue = getRevenueFromPos(start, end);
+                LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
+                yearAndMonthWritable.setYear(localDateTime.getYear());
+                yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
+                revenueWritable.set(revenue);
+                context.write(yearAndMonthWritable, revenueWritable);
             }
-            if (hasPastByAirport(fullSegmentList)) {
-                TimePosFull start = fullSegmentList.get(0);
-                TimePosFull end = fullSegmentList.get(size - 1);
-                if (isRouteReasonable(start, end)) {
-                    double revenue = getRevenueFromPos(start, end);
-                    LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
-                    yearAndMonthWritable.setYear(localDateTime.getYear());
-                    yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
-                    revenueWritable.set(revenue);
-                    context.write(yearAndMonthWritable, revenueWritable);
-                }
-            }
+
         }
     }
 
