@@ -483,27 +483,18 @@ class SegmentReducer
 class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
     private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
     private DoubleWritable revenueWritable = new DoubleWritable();
-    private List<TimePosFull> fullSegmentList = new ArrayList<>();
-    private TimePosFull start = new TimePosFull();
-    private TimePosFull end = new TimePosFull();
+
 
     public void map(Object key, Text value,
                     Context context
     ) throws IOException, InterruptedException {
-        StringTokenizer str = new StringTokenizer(value.toString());
-        boolean hasPassByAirport = Boolean.valueOf(str.nextToken());
+        String[] trip = value.toString().split("\t");
+        boolean hasPassByAirport = Boolean.valueOf(trip[0]);
+        Double distance = Double.valueOf(trip[7]);
+        Double startTime = Double.valueOf(trip[1]);
         if (hasPassByAirport) {
-            fullSegmentList.clear();
-            start.setTime(Double.valueOf(str.nextToken()));
-            start.setLatitude(Double.valueOf(str.nextToken()));
-            start.setLongtitude(Double.valueOf(str.nextToken()));
-            end.setTime(Double.valueOf(str.nextToken()));
-            end.setLatitude(Double.valueOf(str.nextToken()));
-            end.setLongtitude(Double.valueOf(str.nextToken()));
-
-
-            double revenue = getRevenueFromPos(start, end);
-            LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
+            double revenue = getRevenueFromDistance(distance);
+            LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(startTime);
             yearAndMonthWritable.setYear(localDateTime.getYear());
             yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
             revenueWritable.set(revenue);
