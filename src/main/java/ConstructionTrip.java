@@ -270,13 +270,23 @@ class TripWritable implements Writable {
     private boolean hasPassByAirport;
     private TimePosFull start;
     private TimePosFull end;
+    private Double distance;
 
     public TripWritable() {
     }
 
-    public TripWritable(boolean hasPassByAirport, TimePosFull start, TimePosFull end) {
+    public TripWritable(boolean hasPassByAirport, TimePosFull start, TimePosFull end, Double distance) {
+        this.hasPassByAirport = hasPassByAirport;
         this.start = start;
         this.end = end;
+        this.distance = distance;
+    }
+
+    public boolean isHasPassByAirport() {
+        return hasPassByAirport;
+    }
+
+    public void setHasPassByAirport(boolean hasPassByAirport) {
         this.hasPassByAirport = hasPassByAirport;
     }
 
@@ -296,12 +306,12 @@ class TripWritable implements Writable {
         this.end = end;
     }
 
-    public boolean isHasPassByAirport() {
-        return hasPassByAirport;
+    public Double getDistance() {
+        return distance;
     }
 
-    public void setHasPassByAirport(boolean hasPassByAirport) {
-        this.hasPassByAirport = hasPassByAirport;
+    public void setDistance(Double distance) {
+        this.distance = distance;
     }
 
     @Override
@@ -309,6 +319,7 @@ class TripWritable implements Writable {
         dataOutput.writeBoolean(isHasPassByAirport());
         write(dataOutput, start);
         write(dataOutput, end);
+        dataOutput.writeDouble(distance);
     }
 
     public void write(DataOutput dataOutput, TimePosFull timePosFull) throws IOException {
@@ -327,6 +338,7 @@ class TripWritable implements Writable {
         end.setTime(dataInput.readDouble());
         end.setLatitude(dataInput.readDouble());
         end.setLongtitude(dataInput.readDouble());
+        distance = dataInput.readDouble();
 
     }
 
@@ -336,6 +348,8 @@ class TripWritable implements Writable {
         str.append(hasPassByAirport);
         str.append(toString(start));
         str.append(toString(end));
+        str.append("\t");
+        str.append(distance);
         return str.toString();
     }
 
@@ -444,8 +458,14 @@ class SegmentReducer
         end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
         end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
         end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
-        if (isRouteReasonable(start, end)) {
-            context.write(key, new TripWritable(hasPastByAirport, start, end));
+
+        //check whether the trip is reasonable
+        double interval = end.getTime() - start.getTime();
+        double distance = DistanceUtil.getSphericalProjectionDistance(start, end);
+        double speed = DistanceUtil.getSpeed(distance, interval);
+        boolean isRouteReasonable =  speed > 0.0 && speed < 200.0;
+        if (isRouteReasonable) {
+            context.write(key, new TripWritable(hasPastByAirport, start, end, distance));
         }
     }
 
@@ -456,14 +476,6 @@ class SegmentReducer
         } else {
             return false;
         }
-    }
-
-    //todo record the distance
-    public static boolean isRouteReasonable(TimePosFull start, TimePosFull end) {
-        double interval = end.getTime() - start.getTime();
-        double distance = DistanceUtil.getSphericalProjectionDistance(start, end);
-        double speed = DistanceUtil.getSpeed(distance, interval);
-        return  speed > 0 && speed < 200;
     }
 
 }
