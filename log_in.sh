@@ -25,7 +25,8 @@ hadoop fs -ls /user/r0829520
 
 javac -cp $(yarn classpath) ConstructionTrip.java
 jar cf ConstructionTrip.jar *.class
-hadoop jar ConstructionTrip.jar ConstructionTrip /user/r0829520/2010_03.segments  /user/r0829520/tmp_2010 /user/r0829520/final_2010
+hadoop jar ConstructionTrip.jar ConstructionTrip /user/r0829520/2010_03.segments  /user/r0829520/tmp_2010_3 /user/r0829520/final_2010_3 1000000 15
+hadoop jar WordCount.jar WordCount file:///home/r0829520/assign3/data/hello /user/r0829520/hello
 
 #$SPARK_INSTALL/bin/spark-submit --class "WordCount" --master local[1] WordCount.jar  data/hello file:///home/r0829520/assign3/wordcount/out
 
@@ -73,3 +74,11 @@ ssh r0829520@alken.cs.kotnet.kuleuven.be
 #ohey hasselt ham brugge
 
 cd /usr/local/Cellar/apache-spark/3.1.1
+
+
+
+
+https://10.33.14.40:8188/gateway/yarnui/yarn/apps/RUNNING
+https://10.33.14.40:8443/gateway/yarnui/yarn/apps/RUNNING
+
+ssh -L 8081:10.33.14.40:8188 bilzen.cs.kotnet.kuleuven.be

@@ -396,6 +396,8 @@ class SegmentReducer
     private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
     private TimePosFull start = new TimePosFull();
     private TimePosFull end = new TimePosFull();
+    private static final double airPortLat = 37.62131;
+    private static final double airPortLong = -122.37896;
 
     public void reduce(IntWritable key, Iterable<TimePosTupleWritable> values,
                        Context context
@@ -408,37 +410,62 @@ class SegmentReducer
         boolean formerStatus = true;
         int firstFullIndex = 0;
         int lastFullIndex = 0;
+        boolean hasPastByAirport = false;
         for (int i = 0; i < timePosTupleWritableList.size(); i++) {
             if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
                 if (formerStatus == true) {
                     //the beginning of a new trip
+                    hasPastByAirport = false;
                     firstFullIndex = i;
                 } else {
                     lastFullIndex = i;
                 }
                 formerStatus = false;
+                if (checkIfPastByAirport(timePosTupleWritableList.get(i))) {
+                    hasPastByAirport = true;
+                }
             } else {
                 if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty
-                    writeContext(context, firstFullIndex, lastFullIndex, key);
+                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);
                 }
                 formerStatus = true;
             }
         }
         if (formerStatus == false && lastFullIndex > firstFullIndex) {
-            writeContext(context, firstFullIndex, lastFullIndex, key);
+            writeContext(context, firstFullIndex, lastFullIndex, key,hasPastByAirport);
 
         }
     }
 
-    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key) throws IOException, InterruptedException {
+    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key, boolean hasPastByAirport) throws IOException, InterruptedException {
         start.setTime(timePosTupleWritableList.get(firstFullIndex).getTime());
         start.setLatitude(timePosTupleWritableList.get(firstFullIndex).getLatitude());
         start.setLongtitude(timePosTupleWritableList.get(firstFullIndex).getLongtitude());
         end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
         end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
         end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
-        context.write(key, new TripWritable(true, start, end));
+        if (isRouteReasonable(start, end)) {
+            context.write(key, new TripWritable(hasPastByAirport, start, end));
+        }
     }
+
+
+    public static boolean checkIfPastByAirport(TimePosTupleWritable timePos) {
+        if (DistanceUtil.getSphericalProjectionDistance(timePos.getLatitude(), timePos.getLongtitude(), airPortLat, airPortLong) <= 1000.0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    //todo record the distance
+    public static boolean isRouteReasonable(TimePosFull start, TimePosFull end) {
+        double interval = end.getTime() - start.getTime();
+        double distance = DistanceUtil.getSphericalProjectionDistance(start, end);
+        double speed = DistanceUtil.getSpeed(distance, interval);
+        return  speed > 0 && speed < 200;
+    }
+
 }
 
 class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
@@ -462,34 +489,19 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
             end.setLatitude(Double.valueOf(str.nextToken()));
             end.setLongtitude(Double.valueOf(str.nextToken()));
 
-            if (isRouteReasonable(start, end)) {
-                double revenue = getRevenueFromPos(start, end);
-                LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
-                yearAndMonthWritable.setYear(localDateTime.getYear());
-                yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
-                revenueWritable.set(revenue);
-                context.write(yearAndMonthWritable, revenueWritable);
-            }
 
+            double revenue = getRevenueFromPos(start, end);
+            LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(start.getTime());
+            yearAndMonthWritable.setYear(localDateTime.getYear());
+            yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
+            revenueWritable.set(revenue);
+            context.write(yearAndMonthWritable, revenueWritable);
         }
     }
 
-    //todo
-    public static boolean hasPastByAirport(List<TimePosFull> fullSegmentList) {
-        return true;
-    }
-
-    //todo
-    public static boolean isRouteReasonable(TimePosFull start, TimePosFull end) {
-        return true;
-    }
 
     public static double getRevenueFromPos(TimePosFull start, TimePosFull end) {
-        double startLat = start.getLatitude();
-        double startLong = start.getLongtitude();
-        double endLat = end.getLatitude();
-        double endLong = end.getLongtitude();
-        double distance = DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+        double distance = DistanceUtil.getSphericalProjectionDistance(start,end);
         return getRevenueFromDistance(distance);
     }
 
@@ -533,6 +545,15 @@ class DistanceUtil {
                 - 2 * startColatitudeInRadian * endColatitudeInRadian * Math.cos(deltaLong)) * 1000;
     }
 
+    public static Double getSphericalProjectionDistance(TimePosFull start, TimePosFull end) {
+        double startLat = start.getLatitude();
+        double startLong = start.getLongtitude();
+        double endLat = end.getLatitude();
+        double endLong = end.getLongtitude();
+        double distance = DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+        return distance;
+    }
+
     public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
         Double deltaLat = (endLat - startLat);
         Double deltaLong = (endLong - startLong);
@@ -544,6 +565,10 @@ class DistanceUtil {
         return Math.PI * (90 - degree) / 180;
     }
 
+   public static Double getSpeed(double distance, double tripTime) {
+       double speed = 3.6 * distance / tripTime;
+       return speed;
+   }
 
     public static Double getSecondsDouble(String datetime) throws ParseException {
         Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
