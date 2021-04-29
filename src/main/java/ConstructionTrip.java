@@ -45,7 +45,10 @@ public class ConstructionTrip extends Configured implements Tool {
         Job job2 = Job.getInstance(conf2, "revenue distribution");
         FileInputFormat.setInputPaths(job2, new Path(args[1]));
         FileOutputFormat.setOutputPath(job2, new Path(args[2]));
+        job2.setJarByClass(ConstructionTrip.class);
+
         job2.setMapperClass(RevenueMapper.class);
+        job2.setCombinerClass(RevenueReducer.class);
         job2.setReducerClass(RevenueReducer.class);
         job2.setOutputKeyClass(YearAndMonthWritable.class);
         job2.setOutputValueClass(DoubleWritable.class);
@@ -251,7 +254,7 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     //Todo:
     @Override
     public String toString() {
-        return this.getYear() + "\t" + this.getMonth();
+        return this.getYear() + "_" + this.getMonth();
     }
 
     @Override
@@ -264,6 +267,22 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
             return Integer.compare(month, o.getMonth());
         }
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o instanceof YearAndMonthWritable) {
+            return year.equals(((YearAndMonthWritable) o).getYear()) && month.equals(((YearAndMonthWritable) o).getMonth());
+        } else {
+            return false;
+        }
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * year.hashCode() + month.hashCode();
+    }
+
+
 }
 
 class TripWritable implements Writable {
