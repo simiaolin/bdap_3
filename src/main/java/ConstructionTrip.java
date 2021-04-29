@@ -31,7 +31,9 @@ public class ConstructionTrip extends Configured implements Tool {
     public int run(String[] args) throws Exception {
 
         Configuration conf1 = getConf();
-        Job job1 = Job.getInstance(conf1, "trip construction");
+        String nameOfJob1 = args[7];
+        String nameOfJob2 = args[8];
+        Job job1 = Job.getInstance(conf1, nameOfJob1);
         job1.setJarByClass(ConstructionTrip.class);
         job1.setMapperClass(SegmentMapper.class);
         job1.setReducerClass(SegmentReducer.class);
@@ -42,7 +44,7 @@ public class ConstructionTrip extends Configured implements Tool {
 
 
         Configuration conf2 = getConf();
-        Job job2 = Job.getInstance(conf2, "revenue distribution");
+        Job job2 = Job.getInstance(conf2, nameOfJob2);
         FileInputFormat.setInputPaths(job2, new Path(args[1]));
         FileOutputFormat.setOutputPath(job2, new Path(args[2]));
         job2.setJarByClass(ConstructionTrip.class);
@@ -54,13 +56,15 @@ public class ConstructionTrip extends Configured implements Tool {
         job2.setOutputValueClass(DoubleWritable.class);
 
         job2.setInputFormatClass(KeyValueTextInputFormat.class);
-        int splitSize = Integer.valueOf(args[3]);
-        int reduceTaskNum = Integer.valueOf(args[4]);
+        int splitSizeOfJob1 = Integer.valueOf(args[3]);
+        int reduceTaskNumOfJob1 = Integer.valueOf(args[4]);
+        int splitSizeOfJob2 = Integer.valueOf(args[5]);
+        int reduceTaskNumOfJob2 = Integer.valueOf(args[6]);
 //        job2.setInputFormatClass(SequenceFileInputFormat.class);
-        FileInputFormat.setMaxInputSplitSize(job1, splitSize);
-        FileInputFormat.setMaxInputSplitSize(job2, splitSize);
-        job1.setNumReduceTasks(reduceTaskNum);
-        job2.setNumReduceTasks(reduceTaskNum);
+        FileInputFormat.setMaxInputSplitSize(job1, splitSizeOfJob1);
+        FileInputFormat.setMaxInputSplitSize(job2, splitSizeOfJob2);
+        job1.setNumReduceTasks(reduceTaskNumOfJob1);
+        job2.setNumReduceTasks(reduceTaskNumOfJob2);
         JobControl jobControl = new JobControl("job chain");
         ControlledJob controlledJob1 = new ControlledJob(conf1);
         controlledJob1.setJob(job1);
