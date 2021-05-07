@@ -404,17 +404,24 @@ class SegmentMapper
             Double startLong = Double.valueOf(segment[3]);
             Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
 
+            timePosTupleWritable.setEmpty(startStatus);
+            timePosTupleWritable.setTime(startTime);
+            timePosTupleWritable.setLatitude(startLat);
+            timePosTupleWritable.setLongtitude(startLong);
+            taxiNumWritable.set(taxiNum);
+            context.write(taxiNumWritable, timePosTupleWritable);
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            Integer taxiNum = Integer.valueOf(segment[0]);
+
             Double endTime = DistanceUtil.getSecondsDouble(segment[5]);
             Double endLat = Double.valueOf(segment[6]);
             Double endLong = Double.valueOf(segment[7]);
             Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
             taxiNumWritable.set(taxiNum);
-
-            timePosTupleWritable.setEmpty(startStatus);
-            timePosTupleWritable.setTime(startTime);
-            timePosTupleWritable.setLatitude(startLat);
-            timePosTupleWritable.setLongtitude(startLong);
-            context.write(taxiNumWritable, timePosTupleWritable);
 
             timePosTupleWritable.setEmpty(endStatus);
             timePosTupleWritable.setTime(endTime);
