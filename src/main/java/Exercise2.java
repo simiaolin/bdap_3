@@ -114,6 +114,221 @@ public class Exercise2 extends Configured implements Tool {
     }
 }
 
+//Map the segment record to taxi number.
+//For each line in the input, there are two segments, retrieve these info and write them into the corresponding taxi.
+class SegmentMapper
+        extends Mapper<Object, Text, IntWritable, TimePosTupleWritable> {
+    private IntWritable taxiNumWritable = new IntWritable();
+    private TimePosTupleWritable timePosTupleWritable = new TimePosTupleWritable(0.0, 0.0, 0.0, false);
+
+    public void map(Object key, Text value, Context context
+    ) throws IOException, InterruptedException {
+        String[] segment = value.toString().split(",");
+        try {
+            Integer taxiNum = Integer.valueOf(segment[0]);
+            Double startTime = DistanceUtilTwo.getSecondsDouble(segment[1]);
+            Double startLat = Double.valueOf(segment[2]);
+            Double startLong = Double.valueOf(segment[3]);
+            Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
+
+            timePosTupleWritable.setEmpty(startStatus);
+            timePosTupleWritable.setTime(startTime);
+            timePosTupleWritable.setLatitude(startLat);
+            timePosTupleWritable.setLongtitude(startLong);
+            taxiNumWritable.set(taxiNum);
+            context.write(taxiNumWritable, timePosTupleWritable);    //information of first segment
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+
+        try {
+            Integer taxiNum = Integer.valueOf(segment[0]);
+
+            Double endTime = DistanceUtilTwo.getSecondsDouble(segment[5]);
+            Double endLat = Double.valueOf(segment[6]);
+            Double endLong = Double.valueOf(segment[7]);
+            Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
+            taxiNumWritable.set(taxiNum);
+
+            timePosTupleWritable.setEmpty(endStatus);
+            timePosTupleWritable.setTime(endTime);
+            timePosTupleWritable.setLatitude(endLat);
+            timePosTupleWritable.setLongtitude(endLong);
+            context.write(taxiNumWritable, timePosTupleWritable);   //information of second segment
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+//For each taxi, first sort its segments according to its time info, then retrieve consecutive segments with status 'M', which means the taxi is full.
+//For example, if we have 10 segments like 1_E, 2_E, 3_M, 4_M, 5_M, 6_E, 7_E, 8_M, 9_M, 10_E, we can retrieve two trips,
+// <3_M, 4_M, 5_M>  and <8_M, 9_M> , respectively.
+//For each retrieved trip, calculate the distance, filter on its speed, check whether it has past the airport.
+class SegmentReducer
+        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TripWritable> {
+    private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
+    private TimePosFull start = new TimePosFull();
+    private TimePosFull end = new TimePosFull();
+    private static final double airPortLat = 37.62131;
+    private static final double airPortLong = -122.37896;
+
+    public void reduce(IntWritable key, Iterable<TimePosTupleWritable> values,
+                       Context context
+    ) throws IOException, InterruptedException {
+        timePosTupleWritableList.clear();
+        for (TimePosTupleWritable val : values) {
+            timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
+        }
+        timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
+        boolean formerStatus = true;
+        int firstFullIndex = 0;    //index of segment that is the begin of a trip
+        int lastFullIndex = 0;     //index of segment that is the end of a trip
+        boolean hasPastByAirport = false;
+        for (int i = 0; i < timePosTupleWritableList.size(); i++) {
+            if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
+                if (formerStatus == true) {
+                    //the beginning of a new trip
+                    hasPastByAirport = false;
+                    firstFullIndex = i;
+                } else {
+                    lastFullIndex = i;
+                }
+                formerStatus = false;
+                if (checkIfPastByAirport(timePosTupleWritableList.get(i))) {
+                    hasPastByAirport = true;
+                }
+            } else {
+                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty
+                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);
+                }
+                formerStatus = true;
+            }
+        }
+        if (formerStatus == false && lastFullIndex > firstFullIndex) {
+            writeContext(context, firstFullIndex, lastFullIndex, key,hasPastByAirport);
+
+        }
+    }
+
+    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key, boolean hasPastByAirport) throws IOException, InterruptedException {
+        start.setTime(timePosTupleWritableList.get(firstFullIndex).getTime());
+        start.setLatitude(timePosTupleWritableList.get(firstFullIndex).getLatitude());
+        start.setLongtitude(timePosTupleWritableList.get(firstFullIndex).getLongtitude());
+        end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
+        end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
+        end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
+
+        //check whether the trip is reasonable
+        double interval = end.getTime() - start.getTime();
+        double distance = DistanceUtilTwo.getSphericalProjectionDistance(start, end);
+        double speed = DistanceUtilTwo.getSpeed(distance, interval);
+        boolean isRouteReasonable =  speed > 0.0 && speed < 200.0;
+        if (isRouteReasonable) {
+            context.write(key, new TripWritable(hasPastByAirport, start, end, distance));
+        }
+    }
+
+
+    public static boolean checkIfPastByAirport(TimePosTupleWritable timePos) {
+        if (DistanceUtilTwo.getSphericalProjectionDistance(timePos.getLatitude(), timePos.getLongtitude(), airPortLat, airPortLong) <= 1000.0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+}
+
+//For each input, if it is a trip passing through the airport, calculate its revenue and map the revenue to its time
+class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
+    private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
+    private DoubleWritable revenueWritable = new DoubleWritable();
+
+
+    public void map(Object key, Text value,
+                    Context context
+    ) throws IOException, InterruptedException {
+        String[] trip = value.toString().split("\t");
+        boolean hasPassByAirport = Boolean.valueOf(trip[0]);
+        Double distance = Double.valueOf(trip[7]);
+        Double startTime = Double.valueOf(trip[1]);
+        if (hasPassByAirport) {
+            double revenue = getRevenueFromDistance(distance);
+            LocalDateTime localDateTime = DistanceUtilTwo.getLocalDatetimeFromDouble(startTime);
+            yearAndMonthWritable.setYear(localDateTime.getYear());
+            yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
+            revenueWritable.set(revenue);
+            context.write(yearAndMonthWritable, revenueWritable);
+        }
+    }
+
+    public static double getRevenueFromDistance(double distance) {
+        return 3.5 + distance * 1.71 / 1000;
+    }
+
+}
+
+//Sum over the revenue for each month.
+class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearAndMonthWritable, DoubleWritable> {
+    private DoubleWritable result = new DoubleWritable();
+
+    public void reduce(YearAndMonthWritable key, Iterable<DoubleWritable> values, Context context) throws IOException, InterruptedException {
+        double sum = 0;
+        for (DoubleWritable val : values) {
+            sum += val.get();
+        }
+        result.set(sum);
+        context.write(key, result);
+    }
+}
+
+class DistanceUtilTwo {
+    static final Double R = 6371.009;
+    static final String format = "yyyy-MM-dd HH:mm:ss";
+    static final TimeZone zone = TimeZone.getTimeZone("America/Los Angeles");
+    static SimpleDateFormat sdf = new SimpleDateFormat(format);
+
+    static {
+        sdf.setTimeZone(zone);
+    }
+
+    //get spherical projection distance provided start point and end point
+    public static Double getSphericalProjectionDistance(TimePosFull start, TimePosFull end) {
+        double startLat = start.getLatitude();
+        double startLong = start.getLongtitude();
+        double endLat = end.getLatitude();
+        double endLong = end.getLongtitude();
+        double distance = DistanceUtilTwo.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
+        return distance;
+    }
+
+    //get spherical projection distance provided the latitudes and longtitudes of start point and end point
+    public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
+        Double deltaLat = (endLat - startLat);
+        Double deltaLong = (endLong - startLong);
+        Double midLat = (startLat + endLat) / 2 * Math.PI / 180;
+        return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
+    }
+
+   public static Double getSpeed(double distance, double tripTime) {
+       double speed = 3.6 * distance / tripTime;
+       return speed;
+   }
+
+    //transform datetime from string form to double form
+    public static Double getSecondsDouble(String datetime) throws ParseException {
+        Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
+        return Double.valueOf(date.getTime() / 1000);
+    }
+
+    //get datetime from its double form
+    public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
+        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
+        return localDateTime;
+    }
+}
+
 //writable recording the info for a single segment
 class TimePosTupleWritable implements Writable {
     private Double time;
@@ -182,47 +397,6 @@ class TimePosTupleWritable implements Writable {
     @Override
     public String toString() {
         return time + "\t" + latitude + "\t" + longtitude + "\t" + isEmpty;
-    }
-}
-
-//segment with status 'M'
-class TimePosFull {
-    private Double time;
-    private Double latitude;
-    private Double longtitude;
-
-    public TimePosFull() {
-
-    }
-
-    public TimePosFull(Double time, Double latitude, Double longtitude) {
-        this.time = time;
-        this.latitude = latitude;
-        this.longtitude = longtitude;
-    }
-
-    public Double getTime() {
-        return time;
-    }
-
-    public void setTime(Double time) {
-        this.time = time;
-    }
-
-    public Double getLatitude() {
-        return latitude;
-    }
-
-    public void setLatitude(Double latitude) {
-        this.latitude = latitude;
-    }
-
-    public Double getLongtitude() {
-        return longtitude;
-    }
-
-    public void setLongtitude(Double longtitude) {
-        this.longtitude = longtitude;
     }
 }
 
@@ -400,217 +574,43 @@ class TripWritable implements Writable {
     }
 }
 
-//Map the segment record to taxi number.
-//For each line in the input, there are two segments, retrieve these info and write them into the corresponding taxi.
-class SegmentMapper
-        extends Mapper<Object, Text, IntWritable, TimePosTupleWritable> {
-    private IntWritable taxiNumWritable = new IntWritable();
-    private TimePosTupleWritable timePosTupleWritable = new TimePosTupleWritable(0.0, 0.0, 0.0, false);
+//segment with status 'M'
+class TimePosFull {
+    private Double time;
+    private Double latitude;
+    private Double longtitude;
 
-    public void map(Object key, Text value, Context context
-    ) throws IOException, InterruptedException {
-        String[] segment = value.toString().split(",");
-        try {
-            Integer taxiNum = Integer.valueOf(segment[0]);
-            Double startTime = DistanceUtil.getSecondsDouble(segment[1]);
-            Double startLat = Double.valueOf(segment[2]);
-            Double startLong = Double.valueOf(segment[3]);
-            Boolean startStatus = String.valueOf(segment[4]).equals("'E'") ? true : false;
+    public TimePosFull() {
 
-            timePosTupleWritable.setEmpty(startStatus);
-            timePosTupleWritable.setTime(startTime);
-            timePosTupleWritable.setLatitude(startLat);
-            timePosTupleWritable.setLongtitude(startLong);
-            taxiNumWritable.set(taxiNum);
-            context.write(taxiNumWritable, timePosTupleWritable);    //information of first segment
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-
-        try {
-            Integer taxiNum = Integer.valueOf(segment[0]);
-
-            Double endTime = DistanceUtil.getSecondsDouble(segment[5]);
-            Double endLat = Double.valueOf(segment[6]);
-            Double endLong = Double.valueOf(segment[7]);
-            Boolean endStatus = String.valueOf(segment[8]).equals("'E'") ? true : false;
-            taxiNumWritable.set(taxiNum);
-
-            timePosTupleWritable.setEmpty(endStatus);
-            timePosTupleWritable.setTime(endTime);
-            timePosTupleWritable.setLatitude(endLat);
-            timePosTupleWritable.setLongtitude(endLong);
-            context.write(taxiNumWritable, timePosTupleWritable);   //information of second segment
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-    }
-}
-
-//For each taxi, first sort its segments according to its time info, then retrieve consecutive segments with status 'M', which means the taxi is full.
-//For example, if we have 10 segments like 1_E, 2_E, 3_M, 4_M, 5_M, 6_E, 7_E, 8_M, 9_M, 10_E, we can retrieve two trips,
-// <3_M, 4_M, 5_M>  and <8_M, 9_M> , respectively.
-//For each retrieved trip, calculate the distance, filter on its speed, check whether it has past the airport.
-class SegmentReducer
-        extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TripWritable> {
-    private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
-    private TimePosFull start = new TimePosFull();
-    private TimePosFull end = new TimePosFull();
-    private static final double airPortLat = 37.62131;
-    private static final double airPortLong = -122.37896;
-
-    public void reduce(IntWritable key, Iterable<TimePosTupleWritable> values,
-                       Context context
-    ) throws IOException, InterruptedException {
-        timePosTupleWritableList.clear();
-        for (TimePosTupleWritable val : values) {
-            timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
-        }
-        timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
-        boolean formerStatus = true;
-        int firstFullIndex = 0;    //index of segment that is the begin of a trip
-        int lastFullIndex = 0;     //index of segment that is the end of a trip
-        boolean hasPastByAirport = false;
-        for (int i = 0; i < timePosTupleWritableList.size(); i++) {
-            if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
-                if (formerStatus == true) {
-                    //the beginning of a new trip
-                    hasPastByAirport = false;
-                    firstFullIndex = i;
-                } else {
-                    lastFullIndex = i;
-                }
-                formerStatus = false;
-                if (checkIfPastByAirport(timePosTupleWritableList.get(i))) {
-                    hasPastByAirport = true;
-                }
-            } else {
-                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty
-                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);
-                }
-                formerStatus = true;
-            }
-        }
-        if (formerStatus == false && lastFullIndex > firstFullIndex) {
-            writeContext(context, firstFullIndex, lastFullIndex, key,hasPastByAirport);
-
-        }
     }
 
-    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key, boolean hasPastByAirport) throws IOException, InterruptedException {
-        start.setTime(timePosTupleWritableList.get(firstFullIndex).getTime());
-        start.setLatitude(timePosTupleWritableList.get(firstFullIndex).getLatitude());
-        start.setLongtitude(timePosTupleWritableList.get(firstFullIndex).getLongtitude());
-        end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
-        end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
-        end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
-
-        //check whether the trip is reasonable
-        double interval = end.getTime() - start.getTime();
-        double distance = DistanceUtil.getSphericalProjectionDistance(start, end);
-        double speed = DistanceUtil.getSpeed(distance, interval);
-        boolean isRouteReasonable =  speed > 0.0 && speed < 200.0;
-        if (isRouteReasonable) {
-            context.write(key, new TripWritable(hasPastByAirport, start, end, distance));
-        }
+    public TimePosFull(Double time, Double latitude, Double longtitude) {
+        this.time = time;
+        this.latitude = latitude;
+        this.longtitude = longtitude;
     }
 
-
-    public static boolean checkIfPastByAirport(TimePosTupleWritable timePos) {
-        if (DistanceUtil.getSphericalProjectionDistance(timePos.getLatitude(), timePos.getLongtitude(), airPortLat, airPortLong) <= 1000.0) {
-            return true;
-        } else {
-            return false;
-        }
+    public Double getTime() {
+        return time;
     }
 
-}
-
-//For each input, if it is a trip passing through the airport, calculate its revenue and map the revenue to its time
-class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
-    private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
-    private DoubleWritable revenueWritable = new DoubleWritable();
-
-
-    public void map(Object key, Text value,
-                    Context context
-    ) throws IOException, InterruptedException {
-        String[] trip = value.toString().split("\t");
-        boolean hasPassByAirport = Boolean.valueOf(trip[0]);
-        Double distance = Double.valueOf(trip[7]);
-        Double startTime = Double.valueOf(trip[1]);
-        if (hasPassByAirport) {
-            double revenue = getRevenueFromDistance(distance);
-            LocalDateTime localDateTime = DistanceUtil.getLocalDatetimeFromDouble(startTime);
-            yearAndMonthWritable.setYear(localDateTime.getYear());
-            yearAndMonthWritable.setMonth(localDateTime.getMonthValue());
-            revenueWritable.set(revenue);
-            context.write(yearAndMonthWritable, revenueWritable);
-        }
+    public void setTime(Double time) {
+        this.time = time;
     }
 
-    public static double getRevenueFromDistance(double distance) {
-        return 3.5 + distance * 1.71 / 1000;
+    public Double getLatitude() {
+        return latitude;
     }
 
-}
-
-//Sum over the revenue for each month.
-class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearAndMonthWritable, DoubleWritable> {
-    private DoubleWritable result = new DoubleWritable();
-
-    public void reduce(YearAndMonthWritable key, Iterable<DoubleWritable> values, Context context) throws IOException, InterruptedException {
-        double sum = 0;
-        for (DoubleWritable val : values) {
-            sum += val.get();
-        }
-        result.set(sum);
-        context.write(key, result);
-    }
-}
-
-class DistanceUtil {
-    static final Double R = 6371.009;
-    static final String format = "yyyy-MM-dd HH:mm:ss";
-    static final TimeZone zone = TimeZone.getTimeZone("America/Los Angeles");
-    static SimpleDateFormat sdf = new SimpleDateFormat(format);
-
-    static {
-        sdf.setTimeZone(zone);
+    public void setLatitude(Double latitude) {
+        this.latitude = latitude;
     }
 
-    //get spherical projection distance provided start point and end point
-    public static Double getSphericalProjectionDistance(TimePosFull start, TimePosFull end) {
-        double startLat = start.getLatitude();
-        double startLong = start.getLongtitude();
-        double endLat = end.getLatitude();
-        double endLong = end.getLongtitude();
-        double distance = DistanceUtil.getSphericalProjectionDistance(startLat, startLong, endLat, endLong);
-        return distance;
+    public Double getLongtitude() {
+        return longtitude;
     }
 
-    //get spherical projection distance provided the latitudes and longtitudes of start point and end point
-    public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
-        Double deltaLat = (endLat - startLat);
-        Double deltaLong = (endLong - startLong);
-        Double midLat = (startLat + endLat) / 2 * Math.PI / 180;
-        return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
-    }
-
-   public static Double getSpeed(double distance, double tripTime) {
-       double speed = 3.6 * distance / tripTime;
-       return speed;
-   }
-
-    //transform datetime from string form to double form
-    public static Double getSecondsDouble(String datetime) throws ParseException {
-        Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
-        return Double.valueOf(date.getTime() / 1000);
-    }
-
-    //get datetime from its double form
-    public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
-        LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
-        return localDateTime;
+    public void setLongtitude(Double longtitude) {
+        this.longtitude = longtitude;
     }
 }

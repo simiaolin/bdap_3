@@ -1,7 +1,7 @@
 #!/bin/sh -v
 eval `ssh-agent -s` && ssh-add ~/.ssh/id_rsa
 scp /Users/ary/dev/code/trait/bdap_3/src/main/java/ConstructionTrip.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/revenueCalculation/
-scp /Users/ary/dev/code/trait/bdap_3/src/main/java/SparkTripLengthDistribution.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/sparkTripLength/
+scp /Users/ary/dev/code/trait/bdap_3/src/main/java/deprecated.SparkTripLengthDistribution.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/sparkTripLength/
 scp /Users/ary/dev/code/trait/bdap_3/src/main/java/example/WordCount.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/wordcount/
 ssh r0829520@bilzen.cs.kotnet.kuleuven.be
 #ssh r0829520@beringen.cs.kotnet.kuleuven.be
@@ -18,9 +18,9 @@ export HADOOP_INSTALL=/cw/bdap/software/hadoop-3.1.2
 export PATH=$PATH:$HADOOP_INSTALL/bin:$HADOOP_INSTALL/sbin
 export HADOOP_CONF_DIR=/localhost/NoCsBack/bdap/clustera
 javac -cp $(yarn classpath) ConstructionTrip.java
-javac -cp $(yarn classpath) SparkTripLengthDistribution.java
+javac -cp $(yarn classpath) deprecated.SparkTripLengthDistribution.java
 jar cf ConstructionTrip.jar *.class
-jar cf SparkTripLengthDistribution.jar *.class
+jar cf deprecated.SparkTripLengthDistribution.jar *.class
 #export HADOOP_CONF_DIR=/localhost/NoCsBack/./bdap/clusterb
 
 hadoop fs -ls /user/r0829520
@@ -34,7 +34,7 @@ hadoop jar ConstructionTrip.jar ConstructionTrip /data/taxi_706.segments  /user/
 hadoop jar ConstructionTrip.jar ConstructionTrip /data/2010_03.segments  /user/r0829520/tmp_2010_5 /user/r0829520/final_2010_5 1000000 10
 hadoop jar ConstructionTrip.jar ConstructionTrip /data/all.segments  /user/r0829520/all_tmp_4 /user/r0829520/all_final_4 128000000 10 42000000 1 trip_128_42 revenue_128_42
 
-$SPARK_INSTALL/bin/spark-submit --class "SparkTripLengthDistribution" --master local[1] SparkTripLengthDistribution.jar /data/2010_03.trips   /user/r0829520/spark_1
+$SPARK_INSTALL/bin/spark-submit --class "SparkTripLengthDistribution" --master local[1] deprecated.SparkTripLengthDistribution.jar /data/2010_03.trips   /user/r0829520/spark_1
 
 hadoop job -list
 hadoop job -kill app_

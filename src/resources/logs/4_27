@@ -1,0 +1,15 @@
+overall 25min
+
+job1 : 25 min
+job2 : 0 min
+
+2021-04-27 11:25:20,983 INFO client.RMProxy: Connecting to ResourceManager at /10.33.14.40:8132
+2021-04-27 11:25:20,997 INFO mapreduce.JobResourceUploader: Disabling Erasure Coding for path: /user/r0829520/.staging/job_1619513266629_0002
+2021-04-27 11:25:21,002 WARN mapreduce.JobResourceUploader: No job jar file set.  User classes may not be found. See Job or Job#setJar(String).
+2021-04-27 11:25:21,027 INFO input.FileInputFormat: Total input files to process : 15
+2021-04-27 11:25:21,871 INFO mapreduce.JobSubmitter: number of splits:7076
+2021-04-27 11:25:21,906 INFO mapreduce.JobSubmitter: Submitting tokens for job: job_1619513266629_0002
+2021-04-27 11:25:21,906 INFO mapreduce.JobSubmitter: Executing with tokens: []
+2021-04-27 11:25:21,909 INFO mapred.YARNRunner: Job jar is not present. Not adding any jar to the list of resources.
+2021-04-27 11:25:21,916 INFO impl.YarnClientImpl: Submitted application application_1619513266629_0002
+2021-04-27 11:25:21,919 INFO mapreduce.Job: The url to track the job: http://10.33.14.40:8188/proxy/application_1619513266629_0002/

@@ -1,4 +1,4 @@
-package utils;
+package deprecated;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.TimeZone;
 
-public class DistanceUtilA {
+//deprecated
+public class DistanceUtilOld {
     static final Double R = 6371.009;
     static final String format = "yyyy-MM-dd HH:mm:ss";    //"yyyy-mm-dd hh:mm:ss" wrong version
     static final TimeZone zone = TimeZone.getTimeZone("America/Los Angeles");
@@ -62,9 +63,9 @@ public class DistanceUtilA {
 
 
     public static void main(String[] args) throws ParseException {
-        long a =  DistanceUtilA.getSecondsLong("'2010-03-01 04:35:13'");
-        long b =  DistanceUtilA.getSecondsLong("'2010-07-01 12:00:40'");
-        long c =  DistanceUtilA.getSecondsLong("'2010-12-01 12:00:40'");
+        long a =  DistanceUtilOld.getSecondsLong("'2010-03-01 04:35:13'");
+        long b =  DistanceUtilOld.getSecondsLong("'2010-07-01 12:00:40'");
+        long c =  DistanceUtilOld.getSecondsLong("'2010-12-01 12:00:40'");
         System.out.println(a);
         System.out.println(b);
         System.out.println(c);

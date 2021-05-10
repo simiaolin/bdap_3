@@ -1,4 +1,6 @@
-import utils.DistanceUtilA;
+package deprecated;
+
+import deprecated.DistanceUtilOld;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -6,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+//deprecated
 public class TripLengthDistribution {
 
     public static List<String> readTripFile(String input) throws IOException {
@@ -30,7 +33,7 @@ public class TripLengthDistribution {
     }
 
 
-    public static HashMap<Integer, Integer> getDistances(List<String> lines) {
+    public static HashMap<Integer, Integer> getDistanceDistribution(List<String> lines) {
         HashMap<Integer, Integer> distribution = new HashMap<>();
         for (String line : lines) {
             String[] columns = line.split(" ");
@@ -38,7 +41,7 @@ public class TripLengthDistribution {
             Double startLong = Double.valueOf(columns[3]);
             Double endLat = Double.valueOf(columns[5]);
             Double endLong = Double.valueOf(columns[6]);
-            Integer distance = (int) Math.round(DistanceUtilA.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
+            Integer distance = (int) Math.round(DistanceUtilOld.getSphericalProjectionDistance(startLat, startLong, endLat, endLong));
             Double beginTime = Double.valueOf(columns[1]);
             Double endTime = Double.valueOf(columns[4]);
             Double tripTime = endTime - beginTime;
@@ -57,7 +60,7 @@ public class TripLengthDistribution {
     public static void main(String[] args) throws IOException {
         long start = System.currentTimeMillis();
         List<String> lines = readTripFile(args[0]);
-        HashMap<Integer, Integer> distribution = getDistances(lines);
+        HashMap<Integer, Integer> distribution = getDistanceDistribution(lines);
         writeTripLength(args[1], distribution);
         long end = System.currentTimeMillis();
         System.out.println(end - start);
