@@ -25,16 +25,29 @@ import java.util.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ConstructionTrip extends Configured implements Tool {
-    private static Logger logger = LoggerFactory.getLogger(ConstructionTrip.class);
+public class Exercise2 extends Configured implements Tool {
+    private static Logger logger = LoggerFactory.getLogger(Exercise2.class);
 
     public int run(String[] args) throws Exception {
+        if (args.length < 9) {
+            throw new Exception("please specify 9 arguments! \n" +
+                    "[1]: input file path \n" +
+                    "[2]: output file path for trip reconstruction \n" +
+                    "[3]: output file path for airport revenue distribution \n" +
+                    "[4]: split size of mapper on job 1 \n" +
+                    "[5]: task num of reducer on job 1 \n" +
+                    "[6]: split size of mapper on job 2 \n" +
+                    "[7]: task num of reducer on job 2 \n" +
+                    "[8]: job name of job 1 \n" +
+                    "[9]: job name of job 2\n");
+        }
 
+        //basic configuration for job 1
         Configuration conf1 = getConf();
         String nameOfJob1 = args[7];
         String nameOfJob2 = args[8];
         Job job1 = Job.getInstance(conf1, nameOfJob1);
-        job1.setJarByClass(ConstructionTrip.class);
+        job1.setJarByClass(Exercise2.class);
         job1.setMapperClass(SegmentMapper.class);
         job1.setReducerClass(SegmentReducer.class);
         job1.setOutputKeyClass(IntWritable.class);
@@ -42,34 +55,34 @@ public class ConstructionTrip extends Configured implements Tool {
         FileInputFormat.addInputPath(job1, new Path(args[0]));
         FileOutputFormat.setOutputPath(job1, new Path(args[1]));
 
-
+        //basic configuration for job 2
         Configuration conf2 = getConf();
         Job job2 = Job.getInstance(conf2, nameOfJob2);
         FileInputFormat.setInputPaths(job2, new Path(args[1]));
         FileOutputFormat.setOutputPath(job2, new Path(args[2]));
-        job2.setJarByClass(ConstructionTrip.class);
-
+        job2.setJarByClass(Exercise2.class);
         job2.setMapperClass(RevenueMapper.class);
         job2.setCombinerClass(RevenueReducer.class);
         job2.setReducerClass(RevenueReducer.class);
         job2.setOutputKeyClass(YearAndMonthWritable.class);
         job2.setOutputValueClass(DoubleWritable.class);
-
         job2.setInputFormatClass(KeyValueTextInputFormat.class);
+
+        //configuration on size of mappers and reducers on jobs
         int splitSizeOfJob1 = Integer.valueOf(args[3]);
         int reduceTaskNumOfJob1 = Integer.valueOf(args[4]);
         int splitSizeOfJob2 = Integer.valueOf(args[5]);
         int reduceTaskNumOfJob2 = Integer.valueOf(args[6]);
-//        job2.setInputFormatClass(SequenceFileInputFormat.class);
         FileInputFormat.setMaxInputSplitSize(job1, splitSizeOfJob1);
         FileInputFormat.setMaxInputSplitSize(job2, splitSizeOfJob2);
         job1.setNumReduceTasks(reduceTaskNumOfJob1);
         job2.setNumReduceTasks(reduceTaskNumOfJob2);
+
+        //build a JobControl, chaining job 1 and job 2 together
         JobControl jobControl = new JobControl("job chain");
         ControlledJob controlledJob1 = new ControlledJob(conf1);
         controlledJob1.setJob(job1);
         jobControl.addJob(controlledJob1);
-
         ControlledJob controlledJob2 = new ControlledJob(conf2);
         controlledJob2.setJob(job2);
         controlledJob2.addDependingJob(controlledJob1);
@@ -96,14 +109,12 @@ public class ConstructionTrip extends Configured implements Tool {
     }
 
     public static void main(String[] args) throws Exception {
-        int exitCode = ToolRunner.run(new ConstructionTrip(), args);
+        int exitCode = ToolRunner.run(new Exercise2(), args);
         System.exit(exitCode);
     }
-
-
 }
 
-
+//writable recording the info for a single segment
 class TimePosTupleWritable implements Writable {
     private Double time;
     private Double latitude;
@@ -174,6 +185,7 @@ class TimePosTupleWritable implements Writable {
     }
 }
 
+//segment with status 'M'
 class TimePosFull {
     private Double time;
     private Double latitude;
@@ -214,6 +226,7 @@ class TimePosFull {
     }
 }
 
+//writable recording the year and month infomation
 class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     private Integer year;
     private Integer month;
@@ -285,10 +298,9 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     public int hashCode() {
         return 31 * year.hashCode() + month.hashCode();
     }
-
-
 }
 
+//writable for the output of first job and the input for the second job
 class TripWritable implements Writable {
     private boolean hasPassByAirport;
     private TimePosFull start;
@@ -388,7 +400,8 @@ class TripWritable implements Writable {
     }
 }
 
-
+//Map the segment record to taxi number.
+//For each line in the input, there are two segments, retrieve these info and write them into the corresponding taxi.
 class SegmentMapper
         extends Mapper<Object, Text, IntWritable, TimePosTupleWritable> {
     private IntWritable taxiNumWritable = new IntWritable();
@@ -409,7 +422,7 @@ class SegmentMapper
             timePosTupleWritable.setLatitude(startLat);
             timePosTupleWritable.setLongtitude(startLong);
             taxiNumWritable.set(taxiNum);
-            context.write(taxiNumWritable, timePosTupleWritable);
+            context.write(taxiNumWritable, timePosTupleWritable);    //information of first segment
         } catch (ParseException e) {
             e.printStackTrace();
         }
@@ -427,14 +440,17 @@ class SegmentMapper
             timePosTupleWritable.setTime(endTime);
             timePosTupleWritable.setLatitude(endLat);
             timePosTupleWritable.setLongtitude(endLong);
-            context.write(taxiNumWritable, timePosTupleWritable);
+            context.write(taxiNumWritable, timePosTupleWritable);   //information of second segment
         } catch (ParseException e) {
             e.printStackTrace();
         }
     }
 }
 
-
+//For each taxi, first sort its segments according to its time info, then retrieve consecutive segments with status 'M', which means the taxi is full.
+//For example, if we have 10 segments like 1_E, 2_E, 3_M, 4_M, 5_M, 6_E, 7_E, 8_M, 9_M, 10_E, we can retrieve two trips,
+// <3_M, 4_M, 5_M>  and <8_M, 9_M> , respectively.
+//For each retrieved trip, calculate the distance, filter on its speed, check whether it has past the airport.
 class SegmentReducer
         extends Reducer<IntWritable, TimePosTupleWritable, IntWritable, TripWritable> {
     private List<TimePosTupleWritable> timePosTupleWritableList = new ArrayList();
@@ -452,8 +468,8 @@ class SegmentReducer
         }
         timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
         boolean formerStatus = true;
-        int firstFullIndex = 0;
-        int lastFullIndex = 0;
+        int firstFullIndex = 0;    //index of segment that is the begin of a trip
+        int lastFullIndex = 0;     //index of segment that is the end of a trip
         boolean hasPastByAirport = false;
         for (int i = 0; i < timePosTupleWritableList.size(); i++) {
             if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
@@ -510,6 +526,7 @@ class SegmentReducer
 
 }
 
+//For each input, if it is a trip passing through the airport, calculate its revenue and map the revenue to its time
 class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWritable> {
     private YearAndMonthWritable yearAndMonthWritable = new YearAndMonthWritable();
     private DoubleWritable revenueWritable = new DoubleWritable();
@@ -532,20 +549,13 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
         }
     }
 
-
-    public static double getRevenueFromPos(TimePosFull start, TimePosFull end) {
-        double distance = DistanceUtil.getSphericalProjectionDistance(start,end);
-        return getRevenueFromDistance(distance);
-    }
-
-
     public static double getRevenueFromDistance(double distance) {
         return 3.5 + distance * 1.71 / 1000;
     }
 
 }
 
-
+//Sum over the revenue for each month.
 class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearAndMonthWritable, DoubleWritable> {
     private DoubleWritable result = new DoubleWritable();
 
@@ -561,7 +571,7 @@ class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearA
 
 class DistanceUtil {
     static final Double R = 6371.009;
-    static final String format = "yyyy-MM-dd HH:mm:ss";    //"yyyy-mm-dd hh:mm:ss" wrong version
+    static final String format = "yyyy-MM-dd HH:mm:ss";
     static final TimeZone zone = TimeZone.getTimeZone("America/Los Angeles");
     static SimpleDateFormat sdf = new SimpleDateFormat(format);
 
@@ -569,15 +579,7 @@ class DistanceUtil {
         sdf.setTimeZone(zone);
     }
 
-    //todo investigate other two
-    public static Double getPolarCoordinateDistance(double startLat, double startLong, double endLat, double endLong) {
-        Double startColatitudeInRadian = getColatitudeInRadian(startLat);
-        Double endColatitudeInRadian = getColatitudeInRadian(endLat);
-        Double deltaLong = (endLong - startLong) * Math.PI / 180;
-        return R * Math.sqrt(Math.pow(startColatitudeInRadian, 2) + Math.pow(endColatitudeInRadian, 2)
-                - 2 * startColatitudeInRadian * endColatitudeInRadian * Math.cos(deltaLong)) * 1000;
-    }
-
+    //get spherical projection distance provided start point and end point
     public static Double getSphericalProjectionDistance(TimePosFull start, TimePosFull end) {
         double startLat = start.getLatitude();
         double startLong = start.getLongtitude();
@@ -587,6 +589,7 @@ class DistanceUtil {
         return distance;
     }
 
+    //get spherical projection distance provided the latitudes and longtitudes of start point and end point
     public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
         Double deltaLat = (endLat - startLat);
         Double deltaLong = (endLong - startLong);
@@ -594,32 +597,18 @@ class DistanceUtil {
         return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
     }
 
-    public static Double getColatitudeInRadian(Double degree) {
-        return Math.PI * (90 - degree) / 180;
-    }
-
    public static Double getSpeed(double distance, double tripTime) {
        double speed = 3.6 * distance / tripTime;
        return speed;
    }
 
+    //transform datetime from string form to double form
     public static Double getSecondsDouble(String datetime) throws ParseException {
         Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
         return Double.valueOf(date.getTime() / 1000);
     }
 
-    public static long getSecondsLong(String datetime) throws ParseException {
-        Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
-        long milli = date.getTime();
-        return milli / 1000l;
-    }
-
-    public static String getDateFromLong(long datetime) {
-        Date date = new Date(datetime);
-        String formattedDate = sdf.format(date);
-        return formattedDate;
-    }
-
+    //get datetime from its double form
     public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
         LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
         return localDateTime;
