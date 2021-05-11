@@ -1,7 +1,7 @@
 #!/bin/sh -v
 eval `ssh-agent -s` && ssh-add ~/.ssh/id_rsa
-scp /Users/ary/dev/code/trait/bdap_3/src/main/java/ConstructionTrip.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/revenueCalculation/
-scp /Users/ary/dev/code/trait/bdap_3/src/main/java/deprecated.SparkTripLengthDistribution.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/sparkTripLength/
+scp /Users/ary/dev/code/trait/bdap_3/src/main/java/Exercise1.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/revenueCalculation/
+scp /Users/ary/dev/code/trait/bdap_3/src/main/java/Exercise2.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/sparkTripLength/
 scp /Users/ary/dev/code/trait/bdap_3/src/main/java/example/WordCount.java r0829520@ham.cs.kotnet.kuleuven.be:/home/r0829520/assign3/wordcount/
 ssh r0829520@bilzen.cs.kotnet.kuleuven.be
 #ssh r0829520@beringen.cs.kotnet.kuleuven.be
@@ -9,7 +9,7 @@ ssh r0829520@bilzen.cs.kotnet.kuleuven.be
 #cd /cw/bdap/assignment3/
 #ssh r0829520@orval.cs.kotnet.kuleuven.be
 
-cd /home/r0829520/assign3/revenueCalculation
+cd /home/r0829520/assign3/ex1
 rm *.class *.jar
 
 export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/
@@ -17,10 +17,11 @@ export SPARK_INSTALL=/cw/bdap/software/spark-2.4.0-bin-hadoop2.7
 export HADOOP_INSTALL=/cw/bdap/software/hadoop-3.1.2
 export PATH=$PATH:$HADOOP_INSTALL/bin:$HADOOP_INSTALL/sbin
 export HADOOP_CONF_DIR=/localhost/NoCsBack/bdap/clustera
-javac -cp $(yarn classpath) ConstructionTrip.java
-javac -cp $(yarn classpath) deprecated.SparkTripLengthDistribution.java
-jar cf ConstructionTrip.jar *.class
-jar cf deprecated.SparkTripLengthDistribution.jar *.class
+javac -cp $(yarn classpath) Exercise2.java
+javac -cp /cw/bdap/software/spark-2.4.0-bin-hadoop2.7/jars/spark-core_2.11-2.4.0.jar:/cw/bdap/software/spark-2.4.0-bin-hadoop2.7/jars/scala-library-2.11.12.jar Exercise1.java
+
+jar cf Exercise1.jar *.class
+jar cf Exercise2.jar *.class
 #export HADOOP_CONF_DIR=/localhost/NoCsBack/./bdap/clusterb
 
 hadoop fs -ls /user/r0829520
@@ -30,11 +31,12 @@ hadoop fs -ls /data
 #hadoop fs  -cat /tmp/logs/r0829520/logs/application_1619513266629_0001
 
 
-hadoop jar ConstructionTrip.jar ConstructionTrip /data/taxi_706.segments  /user/r0829520/706_tmp_5 /user/r0829520/706_final_5 100000 3
+hadoop jar ConstructionTrip.jar ConstructionTrip /data;/taxi_706.segments  /user/r0829520/706_tmp_5 /user/r0829520/706_final_5 100000 3
 hadoop jar ConstructionTrip.jar ConstructionTrip /data/2010_03.segments  /user/r0829520/tmp_2010_5 /user/r0829520/final_2010_5 1000000 10
-hadoop jar ConstructionTrip.jar ConstructionTrip /data/all.segments  /user/r0829520/all_tmp_4 /user/r0829520/all_final_4 128000000 10 42000000 1 trip_128_42 revenue_128_42
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_5 /user/r0829520/all_final_5 128000000 10 42000000 1 trip_128_42_5 revenue_128_42_5
 
-$SPARK_INSTALL/bin/spark-submit --class "SparkTripLengthDistribution" --master local[1] deprecated.SparkTripLengthDistribution.jar /data/2010_03.trips   /user/r0829520/spark_1
+$SPARK_INSTALL/bin/spark-submit --class "Exercise1" --master local[1] Exercise1.jar spark /data/2010_03.trips   /home/r0829520/assign3/out/spark_2
+$SPARK_INSTALL/bin/spark-submit --class "Exercise1" --master local[1] Exercise1.jar simple /home/r0829520/assign3/data/2010_03.trips /home/r0829520/assign3/out/simple_2
 
 hadoop job -list
 hadoop job -kill app_
@@ -100,3 +102,17 @@ https://10.33.14.40:8188/gateway/yarnui/yarn/apps/RUNNING
 https://10.33.14.40:8443/gateway/yarnui/yarn/apps/RUNNING
 
 ssh -L 8081:10.33.14.40:8188 bilzen.cs.kotnet.kuleuven.be
+
+
+yarn classpath
+/localhost/NoCsBack/bdap/clustera:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/common/lib/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/common/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/hdfs:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/hdfs/lib/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/hdfs/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/mapreduce/lib/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/mapreduce/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/yarn:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/yarn/lib/*:
+/cw/bdap/software/hadoop-3.1.2/share/hadoop/yarn/*
