@@ -9,7 +9,7 @@ ssh r0829520@bilzen.cs.kotnet.kuleuven.be
 #cd /cw/bdap/assignment3/
 #ssh r0829520@orval.cs.kotnet.kuleuven.be
 
-cd /home/r0829520/assign3/ex1
+cd /home/r0829520/assign3/ex2
 rm *.class *.jar
 
 export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/
@@ -33,9 +33,14 @@ hadoop fs -ls /data
 
 hadoop jar ConstructionTrip.jar ConstructionTrip /data;/taxi_706.segments  /user/r0829520/706_tmp_5 /user/r0829520/706_final_5 100000 3
 hadoop jar ConstructionTrip.jar ConstructionTrip /data/2010_03.segments  /user/r0829520/tmp_2010_5 /user/r0829520/final_2010_5 1000000 10
-hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_5 /user/r0829520/all_final_5 128000000 10 42000000 1 trip_128_42_5 revenue_128_42_5
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_5 /user/r0829520/all_final_5 128000000 10 42000000 1 trip_128_42_5   revenue_128_42_5                           13.5m+1m
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_6 /user/r0829520/all_final_6 384000000 10 12800000 1 trip_384000000_12800000_6 revenue_384000000_12800000_6  12min+2min
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_7 /user/r0829520/all_final_7 32000000 10 1000000 1 trip_32000000_1000000_7 revenue_32000000_1000000_7        25min+ 19min
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_8 /user/r0829520/all_final_8 293267660 20 9775588 1 trip_293267660_20_9775588_1_8 revenue_293267660_20_9775588_1_8 12min + 2min
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_9 /user/r0829520/all_final_9 256000000 20 32000000 1 trip_9 revenue_9 11min + 1min
+hadoop jar Exercise2.jar Exercise2 /data/all.segments  /user/r0829520/all_tmp_10 /user/r0829520/all_final_10 256000000 20 8000000 1 trip_10 revenue_10  11min + 3min
 
-$SPARK_INSTALL/bin/spark-submit --class "Exercise1" --master local[1] Exercise1.jar spark /data/2010_03.trips   /home/r0829520/assign3/out/spark_2
+$SPARK_INSTALL/bin/spark-submit --class "Exercise1" --master local[1] Exercise1.jar spark /home/r0829520/assign3/data/2010_03.trips  /home/r0829520/assign3/out/spark_2
 $SPARK_INSTALL/bin/spark-submit --class "Exercise1" --master local[1] Exercise1.jar simple /home/r0829520/assign3/data/2010_03.trips /home/r0829520/assign3/out/simple_2
 
 hadoop job -list
