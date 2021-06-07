@@ -136,9 +136,9 @@ class SegmentMapper
             timePosTupleWritable.setLatitude(startLat);
             timePosTupleWritable.setLongtitude(startLong);
             taxiNumWritable.set(taxiNum);
-            context.write(taxiNumWritable, timePosTupleWritable);    //information of first segment
+            context.write(taxiNumWritable, timePosTupleWritable);     //information of first segment
         } catch (ParseException e) {
-            e.printStackTrace();
+            e.printStackTrace();                                      //in case there is mis-formatted data
         }
 
         try {
@@ -156,13 +156,13 @@ class SegmentMapper
             timePosTupleWritable.setLongtitude(endLong);
             context.write(taxiNumWritable, timePosTupleWritable);   //information of second segment
         } catch (ParseException e) {
-            e.printStackTrace();
+            e.printStackTrace();                                    //in case there is mis-formatted data
         }
     }
 }
 
 //For each taxi, first sort its segments according to its time info, then retrieve consecutive segments with status 'M', which means the taxi is full.
-//For example, if we have 10 segments like 1_E, 2_E, 3_M, 4_M, 5_M, 6_E, 7_E, 8_M, 9_M, 10_E, we can retrieve two trips,
+//For example, if we have 10 consecutive sorted segments like 1_E, 2_E, 3_M, 4_M, 5_M, 6_E, 7_E, 8_M, 9_M, 10_E, we can retrieve two trips,
 // <3_M, 4_M, 5_M>  and <8_M, 9_M> , respectively.
 //For each retrieved trip, calculate the distance, filter on its speed, check whether it has past the airport.
 class SegmentReducer
@@ -199,8 +199,8 @@ class SegmentReducer
                     hasPastByAirport = true;
                 }
             } else {
-                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty
-                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);
+                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty again
+                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);                  //write out the current reconstructed trip.
                 }
                 formerStatus = true;
             }
@@ -253,7 +253,7 @@ class RevenueMapper extends Mapper<Object, Text, YearAndMonthWritable, DoubleWri
         boolean hasPassByAirport = Boolean.valueOf(trip[0]);
         Double distance = Double.valueOf(trip[7]);
         Double startTime = Double.valueOf(trip[1]);
-        if (hasPassByAirport) {
+        if (hasPassByAirport) {            //only deals with the trip that passes through the airport
             double revenue = getRevenueFromDistance(distance);
             LocalDateTime localDateTime = DistanceUtilTwo.getLocalDatetimeFromDouble(startTime);
             yearAndMonthWritable.setYear(localDateTime.getYear());
@@ -283,6 +283,9 @@ class RevenueReducer extends Reducer<YearAndMonthWritable, DoubleWritable, YearA
     }
 }
 
+/**
+ * DistanceUtilTwo is a utility class for exercise two.
+ */
 class DistanceUtilTwo {
     static final Double R = 6371.009;
     static final String format = "yyyy-MM-dd HH:mm:ss";
@@ -293,7 +296,7 @@ class DistanceUtilTwo {
         sdf.setTimeZone(zone);
     }
 
-    //get spherical projection distance provided start point and end point
+    //Get spherical projection distance provided start point and end point.
     public static Double getSphericalProjectionDistance(TimePosFull start, TimePosFull end) {
         double startLat = start.getLatitude();
         double startLong = start.getLongtitude();
@@ -303,7 +306,7 @@ class DistanceUtilTwo {
         return distance;
     }
 
-    //get spherical projection distance provided the latitudes and longtitudes of start point and end point
+    //Get spherical projection distance provided the latitudes and longtitudes of start point and end point.
     public static Double getSphericalProjectionDistance(double startLat, double startLong, double endLat, double endLong) {
         Double deltaLat = (endLat - startLat);
         Double deltaLong = (endLong - startLong);
@@ -311,25 +314,26 @@ class DistanceUtilTwo {
         return R * Math.PI * Math.sqrt(Math.pow(deltaLat, 2) + Math.pow(Math.cos(midLat) * deltaLong, 2)) * 1000 / 180;
     }
 
+    //Get the trip speed given trip distance and trip time.
    public static Double getSpeed(double distance, double tripTime) {
        double speed = 3.6 * distance / tripTime;
        return speed;
    }
 
-    //transform datetime from string form to double form
+    //Transform datetime from string form to double form.
     public static Double getSecondsDouble(String datetime) throws ParseException {
         Date date = sdf.parse(datetime.substring(1, datetime.length() - 1));
         return Double.valueOf(date.getTime() / 1000);
     }
 
-    //get datetime from its double form
+    //Get datetime from its double form.
     public static LocalDateTime getLocalDatetimeFromDouble(double datetime) {
         LocalDateTime localDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(new Double(datetime).longValue()), zone.toZoneId());
         return localDateTime;
     }
 }
 
-//writable recording the info for a single segment
+//TimePosTupleWritable records the info of a single segment
 class TimePosTupleWritable implements Writable {
     private Double time;
     private Double latitude;
@@ -400,7 +404,7 @@ class TimePosTupleWritable implements Writable {
     }
 }
 
-//writable recording the year and month infomation
+//YearAndMonthWritable records the year and month information
 class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     private Integer year;
     private Integer month;
@@ -474,7 +478,8 @@ class YearAndMonthWritable implements WritableComparable<YearAndMonthWritable> {
     }
 }
 
-//writable for the output of first job and the input for the second job
+//TripWritable records the reconstructed trip information.
+//It is in the output of first job as well as the input of the second job.
 class TripWritable implements Writable {
     private boolean hasPassByAirport;
     private TimePosFull start;
@@ -574,7 +579,7 @@ class TripWritable implements Writable {
     }
 }
 
-//segment with status 'M'
+//TimePosFull is a segment with status 'M'(full)
 class TimePosFull {
     private Double time;
     private Double latitude;
