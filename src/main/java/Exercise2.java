@@ -181,51 +181,68 @@ class SegmentReducer
             timePosTupleWritableList.add(new TimePosTupleWritable(val.getTime(), val.getLatitude(), val.getLongtitude(), val.isEmpty()));
         }
         timePosTupleWritableList.sort((a, b) -> Double.compare(a.getTime(), b.getTime()));
-        boolean formerStatus = true;
-        int firstFullIndex = 0;    //index of segment that is the begin of a trip
-        int lastFullIndex = 0;     //index of segment that is the end of a trip
+        boolean isFormerSegmentEmpty = true;
+        int currentStartSegmentIndex = 0;    //index of segment that is the begin of a trip
+        int currentEndSegmentIndex = 0;     //index of segment that is the end of a trip
+        double currentDistance = 0;
         boolean hasPastByAirport = false;
         for (int i = 0; i < timePosTupleWritableList.size(); i++) {
             if (timePosTupleWritableList.get(i).isEmpty() == false) { // the car is full
-                if (formerStatus == true) {
-                    //the beginning of a new trip
+                if (isFormerSegmentEmpty == true) {                     //indicates the beginning of a new trip
                     hasPastByAirport = false;
-                    firstFullIndex = i;
+                    currentStartSegmentIndex = i;
+                    currentDistance = 0;                        //reset the current distance
                 } else {
-                    lastFullIndex = i;
+                    currentEndSegmentIndex = i;
+                    double formerLatitude = timePosTupleWritableList.get(i - 1).getLatitude();
+                    double formerLongtitude = timePosTupleWritableList.get(i - 1).getLongtitude();
+                    double currentLatitude = timePosTupleWritableList.get(i).getLatitude();
+                    double currentLongtitude = timePosTupleWritableList.get(i).getLongtitude();
+                    currentDistance += DistanceUtilTwo.getSphericalProjectionDistance(formerLatitude, formerLongtitude, currentLatitude, currentLongtitude);
                 }
-                formerStatus = false;
+                isFormerSegmentEmpty = false;
                 if (checkIfPastByAirport(timePosTupleWritableList.get(i))) {
                     hasPastByAirport = true;
                 }
             } else {
-                if (formerStatus == false && lastFullIndex > firstFullIndex) {   //the car just becomes empty again
-                    writeContext(context, firstFullIndex, lastFullIndex, key, hasPastByAirport);                  //write out the current reconstructed trip.
+                if (isFormerSegmentEmpty == false && currentEndSegmentIndex > currentStartSegmentIndex) {   //the car just becomes empty again
+                    writeContext(context, key, currentStartSegmentIndex, currentEndSegmentIndex, hasPastByAirport, currentDistance);                  //write out the current reconstructed trip.
                 }
-                formerStatus = true;
+                isFormerSegmentEmpty = true;
             }
         }
-        if (formerStatus == false && lastFullIndex > firstFullIndex) {
-            writeContext(context, firstFullIndex, lastFullIndex, key,hasPastByAirport);
+        if (isFormerSegmentEmpty == false && currentEndSegmentIndex > currentStartSegmentIndex) {             // the last few segments in the timePosTupleWritableList form a trip
+            writeContext(context, key, currentStartSegmentIndex, currentEndSegmentIndex, hasPastByAirport, currentDistance);
 
         }
     }
 
-    public void writeContext(Context context, int firstFullIndex, int lastFullIndex, IntWritable key, boolean hasPastByAirport) throws IOException, InterruptedException {
-        start.setTime(timePosTupleWritableList.get(firstFullIndex).getTime());
-        start.setLatitude(timePosTupleWritableList.get(firstFullIndex).getLatitude());
-        start.setLongtitude(timePosTupleWritableList.get(firstFullIndex).getLongtitude());
-        end.setTime(timePosTupleWritableList.get(lastFullIndex).getTime());
-        end.setLatitude(timePosTupleWritableList.get(lastFullIndex).getLatitude());
-        end.setLongtitude(timePosTupleWritableList.get(lastFullIndex).getLongtitude());
+    /**
+     * Write out the constructed trips.
+     * @param context                    the spark context
+     * @param taxiId                     the taxi ID
+     * @param startSegmentIndex          the index of the start segment in the timePosTupleWritableList
+     * @param endSegmentIndex            the index of the end segment in the timePosTupleWritableList
+     * @param hasPastByAirport           whether the current trip has passed by the airport
+     * @param distance                   the distance of the current trip,
+     *                                   which is the sum of distances between consecutive segments in the middle of the start segment and the end segment
+     * @throws IOException
+     * @throws InterruptedException
+     */
+    public void writeContext(Context context, IntWritable taxiId, int startSegmentIndex, int endSegmentIndex, boolean hasPastByAirport, double distance) throws IOException, InterruptedException {
+        start.setTime(timePosTupleWritableList.get(startSegmentIndex).getTime());
+        start.setLatitude(timePosTupleWritableList.get(startSegmentIndex).getLatitude());
+        start.setLongtitude(timePosTupleWritableList.get(startSegmentIndex).getLongtitude());
+        end.setTime(timePosTupleWritableList.get(endSegmentIndex).getTime());
+        end.setLatitude(timePosTupleWritableList.get(endSegmentIndex).getLatitude());
+        end.setLongtitude(timePosTupleWritableList.get(endSegmentIndex).getLongtitude());
 
         //check whether the trip is reasonable
         double interval = end.getTime() - start.getTime();
-        double distance = DistanceUtilTwo.getSphericalProjectionDistance(start, end);
         double speed = DistanceUtilTwo.getSpeed(distance, interval);
         boolean isRouteReasonable =  speed > 0.0 && speed < 200.0;
         if (isRouteReasonable) {
-            context.write(key, new TripWritable(hasPastByAirport, start, end, distance));
+            context.write(taxiId, new TripWritable(hasPastByAirport, start, end, distance));
         }
     }
 
